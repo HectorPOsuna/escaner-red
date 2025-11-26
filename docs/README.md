@@ -202,7 +202,7 @@ Se recomienda la siguiente organización de carpetas:
 
 ## Autores
 
-*   **[Tu Nombre]** - *Trabajo Inicial* - [TuUsuarioGit](https://github.com/tuusuario)
+*   **Hector Manuel Padilla Osuna** - *Trabajo Inicial* - [HectorPOsuna](https://github.com/HectorPOsuna)
 *   **[Otro Desarrollador]** - *Backend*
 *   *(Esta sección está abierta para agregar nuevos colaboradores)*
 
