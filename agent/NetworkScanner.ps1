@@ -30,11 +30,19 @@ $OutputFileInactive = Join-Path -Path $PSScriptRoot -ChildPath "inactive_ips.txt
 $PingCount = 1
 $PingTimeoutMs = 200 # Timeout en milisegundos (ajustar según latencia de red)
 
+# Detección de Dominio (para estrategia híbrida de OS detection)
+try {
+    $IsInDomain = (Get-WmiObject Win32_ComputerSystem).PartOfDomain
+} catch {
+    $IsInDomain = $false
+}
+
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "   INICIANDO ESCÁNER DE RED - MONITOR DE PROTOCOLOS" -ForegroundColor Cyan
 Write-Host "================================================================"
 Write-Host "Subred objetivo: ${SubnetPrefix}0/24"
 Write-Host "Version de PowerShell: $($PSVersionTable.PSVersion.ToString())"
+Write-Host "En dominio: $(if ($IsInDomain) { 'Sí (usando WMI/CIM + TTL)' } else { 'No (usando solo TTL)' })"
 Write-Host "----------------------------------------------------------------"
 
 # ==============================================================================
@@ -59,6 +67,64 @@ function Get-IpRange {
     return $Ips
 }
 
+function Get-OSFromTTL {
+    <#
+    .SYNOPSIS
+        Infiere el sistema operativo basándose en el valor TTL del ping.
+    .PARAMETER Ttl
+        Valor TTL obtenido de la respuesta ping.
+    .OUTPUTS
+        String con el OS inferido.
+    #>
+    param (
+        [int]$Ttl
+    )
+    
+    if ($Ttl -le 64) {
+        return "Linux/Unix"
+    }
+    elseif ($Ttl -le 128) {
+        return "Windows"
+    }
+    elseif ($Ttl -le 255) {
+        return "Cisco/Network Device"
+    }
+    else {
+        return "Unknown"
+    }
+}
+
+function Get-OSFromWMI {
+    <#
+    .SYNOPSIS
+        Obtiene el sistema operativo mediante WMI/CIM.
+    .PARAMETER IpAddress
+        Dirección IP del host a consultar.
+    .OUTPUTS
+        String con el nombre del OS o cadena vacía si falla.
+    #>
+    param (
+        [string]$IpAddress
+    )
+    
+    try {
+        # Intentar consulta CIM (más moderna que WMI)
+        $CimSession = New-CimSession -ComputerName $IpAddress -ErrorAction Stop -OperationTimeoutSec 2
+        $OS = Get-CimInstance -CimSession $CimSession -ClassName Win32_OperatingSystem -ErrorAction Stop
+        Remove-CimSession -CimSession $CimSession -ErrorAction SilentlyContinue
+        
+        if ($OS.Caption) {
+            return $OS.Caption -replace 'Microsoft ', ''
+        }
+    }
+    catch {
+        # Si falla CIM, retornar vacío para usar TTL como fallback
+        return ""
+    }
+    
+    return ""
+}
+
 function Test-HostConnectivity {
     <#
     .SYNOPSIS
@@ -66,7 +132,7 @@ function Test-HostConnectivity {
     .INPUTS
         IpAddress (String)
     .OUTPUTS
-        PSCustomObject { IP, Status, Hostname }
+        PSCustomObject { IP, Status, Hostname, OS }
     #>
     param (
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
@@ -75,6 +141,7 @@ function Test-HostConnectivity {
 
     $IsActive = $false
     $Hostname = ""
+    $OS = ""
 
     try {
         # Usar clase .NET Ping para mayor control sobre el Timeout (ms) y mejor rendimiento
@@ -82,10 +149,13 @@ function Test-HostConnectivity {
         $Ping = [System.Net.NetworkInformation.Ping]::new()
         $Reply = $Ping.Send($IpAddress, $PingTimeoutMs)
         $IsActive = ($Reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
-        $Ping.Dispose()
         
-        # Si el host está activo, intentar resolver el hostname
+        # Si el host está activo, intentar resolver el hostname y OS
         if ($IsActive) {
+            # Capturar TTL para detección de OS
+            $Ttl = $Reply.Options.Ttl
+            
+            # Resolver hostname
             try {
                 $Hostname = [System.Net.Dns]::GetHostEntry($IpAddress).HostName
             }
@@ -93,7 +163,20 @@ function Test-HostConnectivity {
                 # Si no se puede resolver, dejar vacío
                 $Hostname = ""
             }
+            
+            # Detección híbrida de OS
+            if ($IsInDomain) {
+                # Intentar WMI/CIM primero si estamos en dominio
+                $OS = Get-OSFromWMI -IpAddress $IpAddress
+            }
+            
+            # Si no obtuvimos OS por WMI o no estamos en dominio, usar TTL
+            if ([string]::IsNullOrEmpty($OS)) {
+                $OS = Get-OSFromTTL -Ttl $Ttl
+            }
         }
+        
+        $Ping.Dispose()
     }
     catch {
         # En caso de error de ejecución (no de ping fallido), asumimos inactivo
@@ -104,6 +187,7 @@ function Test-HostConnectivity {
         IP = $IpAddress
         Status = if ($IsActive) { "Active" } else { "Inactive" }
         Hostname = $Hostname
+        OS = $OS
     }
 }
 
@@ -127,17 +211,22 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
     $Results = $TargetIps | ForEach-Object -Parallel {
         $Ip = $_
         $Timeout = $using:PingTimeoutMs
+        $InDomain = $using:IsInDomain
         $Active = $false
         $HostName = ""
+        $OSDetected = ""
         
         try {
             $Ping = [System.Net.NetworkInformation.Ping]::new()
             $Reply = $Ping.Send($Ip, $Timeout)
             $Active = ($Reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
-            $Ping.Dispose()
             
-            # Si el host está activo, intentar resolver el hostname
+            # Si el host está activo, intentar resolver el hostname y OS
             if ($Active) {
+                # Capturar TTL para detección de OS
+                $Ttl = $Reply.Options.Ttl
+                
+                # Resolver hostname
                 try {
                     $HostName = [System.Net.Dns]::GetHostEntry($Ip).HostName
                 }
@@ -145,7 +234,44 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                     # Si no se puede resolver, dejar vacío
                     $HostName = ""
                 }
+                
+                # Detección híbrida de OS
+                if ($InDomain) {
+                    # Intentar WMI/CIM primero si estamos en dominio
+                    try {
+                        $CimSession = New-CimSession -ComputerName $Ip -ErrorAction Stop -OperationTimeoutSec 2
+                        $OS = Get-CimInstance -CimSession $CimSession -ClassName Win32_OperatingSystem -ErrorAction Stop
+                        Remove-CimSession -CimSession $CimSession -ErrorAction SilentlyContinue
+                        
+                        if ($OS.Caption) {
+                            $OSDetected = $OS.Caption -replace 'Microsoft ', ''
+                        }
+                    }
+                    catch {
+                        # Si falla CIM, usar TTL como fallback
+                        $OSDetected = ""
+                    }
+                }
+                
+                # Si no obtuvimos OS por WMI o no estamos en dominio, usar TTL
+                if ([string]::IsNullOrEmpty($OSDetected)) {
+                    # Inferir OS desde TTL
+                    if ($Ttl -le 64) {
+                        $OSDetected = "Linux/Unix"
+                    }
+                    elseif ($Ttl -le 128) {
+                        $OSDetected = "Windows"
+                    }
+                    elseif ($Ttl -le 255) {
+                        $OSDetected = "Cisco/Network Device"
+                    }
+                    else {
+                        $OSDetected = "Unknown"
+                    }
+                }
             }
+            
+            $Ping.Dispose()
         } catch { 
             $Active = $false 
         }
@@ -155,6 +281,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             IP = $Ip
             Status = if ($Active) { "Active" } else { "Inactive" }
             Hostname = $HostName
+            OS = $OSDetected
         }
     } -ThrottleLimit 64
 }
@@ -188,11 +315,18 @@ $InactiveHosts = $Results | Where-Object { $_.Status -eq "Inactive" } | Select-O
 # Exportar a archivos
 try {
     if ($ActiveHosts) {
-        # Formatear salida con IP y Hostname
+        # Formatear salida con IP, Hostname y OS
         $ActiveHosts | ForEach-Object {
-            if ($_.Hostname) {
+            if ($_.Hostname -and $_.OS) {
+                "$($_.IP) - $($_.Hostname) - $($_.OS)"
+            }
+            elseif ($_.Hostname) {
                 "$($_.IP) - $($_.Hostname)"
-            } else {
+            }
+            elseif ($_.OS) {
+                "$($_.IP) - $($_.OS)"
+            }
+            else {
                 $_.IP
             }
         } | Out-File -FilePath $OutputFileActive -Encoding UTF8 -Force
