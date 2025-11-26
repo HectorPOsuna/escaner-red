@@ -23,8 +23,7 @@
 $SubnetPrefix = "192.168.1."
 
 # Archivos de salida
-$OutputFileActive = Join-Path -Path $PSScriptRoot -ChildPath "active_ips.txt"
-$OutputFileInactive = Join-Path -Path $PSScriptRoot -ChildPath "inactive_ips.txt"
+$OutputFileReport = Join-Path -Path $PSScriptRoot -ChildPath "reporte_de_red.txt"
 
 # Configuración de Ping
 $PingCount = 1
@@ -125,6 +124,48 @@ function Get-OSFromWMI {
     return ""
 }
 
+function Get-MacAddress {
+    <#
+    .SYNOPSIS
+        Obtiene la dirección MAC desde la tabla ARP.
+    .PARAMETER IpAddress
+        Dirección IP del host a consultar.
+    .OUTPUTS
+        String con la dirección MAC o cadena vacía si no se encuentra.
+    #>
+    param (
+        [string]$IpAddress
+    )
+    
+    try {
+        # Intentar usar Get-NetNeighbor (PowerShell 5.1+)
+        if (Get-Command Get-NetNeighbor -ErrorAction SilentlyContinue) {
+            $Neighbor = Get-NetNeighbor -IPAddress $IpAddress -ErrorAction SilentlyContinue
+            if ($Neighbor -and $Neighbor.LinkLayerAddress) {
+                return $Neighbor.LinkLayerAddress
+            }
+        }
+        
+        # Fallback: parsear salida de arp -a
+        $ArpOutput = arp -a $IpAddress 2>$null
+        if ($ArpOutput) {
+            foreach ($Line in $ArpOutput) {
+                if ($Line -match $IpAddress) {
+                    # Extraer MAC address (formato xx-xx-xx-xx-xx-xx)
+                    if ($Line -match '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})') {
+                        return $Matches[0]
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        return ""
+    }
+    
+    return ""
+}
+
 function Test-HostConnectivity {
     <#
     .SYNOPSIS
@@ -132,7 +173,7 @@ function Test-HostConnectivity {
     .INPUTS
         IpAddress (String)
     .OUTPUTS
-        PSCustomObject { IP, Status, Hostname, OS }
+        PSCustomObject { IP, Status, Hostname, OS, MacAddress }
     #>
     param (
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
@@ -142,6 +183,7 @@ function Test-HostConnectivity {
     $IsActive = $false
     $Hostname = ""
     $OS = ""
+    $MacAddress = ""
 
     try {
         # Usar clase .NET Ping para mayor control sobre el Timeout (ms) y mejor rendimiento
@@ -160,8 +202,8 @@ function Test-HostConnectivity {
                 $Hostname = [System.Net.Dns]::GetHostEntry($IpAddress).HostName
             }
             catch {
-                # Si no se puede resolver, dejar vacío
-                $Hostname = ""
+                # Si no se puede resolver, usar valor por defecto
+                $Hostname = "Desconocido"
             }
             
             # Detección híbrida de OS
@@ -173,6 +215,12 @@ function Test-HostConnectivity {
             # Si no obtuvimos OS por WMI o no estamos en dominio, usar TTL
             if ([string]::IsNullOrEmpty($OS)) {
                 $OS = Get-OSFromTTL -Ttl $Ttl
+            }
+            
+            # Obtener dirección MAC desde ARP
+            $MacAddress = Get-MacAddress -IpAddress $IpAddress
+            if ([string]::IsNullOrEmpty($MacAddress)) {
+                $MacAddress = "No disponible"
             }
         }
         
@@ -188,6 +236,7 @@ function Test-HostConnectivity {
         Status = if ($IsActive) { "Active" } else { "Inactive" }
         Hostname = $Hostname
         OS = $OS
+        MacAddress = $MacAddress
     }
 }
 
@@ -215,6 +264,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
         $Active = $false
         $HostName = ""
         $OSDetected = ""
+        $MacAddr = ""
         
         try {
             $Ping = [System.Net.NetworkInformation.Ping]::new()
@@ -231,8 +281,8 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                     $HostName = [System.Net.Dns]::GetHostEntry($Ip).HostName
                 }
                 catch {
-                    # Si no se puede resolver, dejar vacío
-                    $HostName = ""
+                    # Si no se puede resolver, usar valor por defecto
+                    $HostName = "Desconocido"
                 }
                 
                 # Detección híbrida de OS
@@ -269,6 +319,37 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                         $OSDetected = "Unknown"
                     }
                 }
+                
+                # Obtener dirección MAC desde ARP
+                try {
+                    if (Get-Command Get-NetNeighbor -ErrorAction SilentlyContinue) {
+                        $Neighbor = Get-NetNeighbor -IPAddress $Ip -ErrorAction SilentlyContinue
+                        if ($Neighbor -and $Neighbor.LinkLayerAddress) {
+                            $MacAddr = $Neighbor.LinkLayerAddress
+                        }
+                    }
+                    
+                    if ([string]::IsNullOrEmpty($MacAddr)) {
+                        $ArpOutput = arp -a $Ip 2>$null
+                        if ($ArpOutput) {
+                            foreach ($Line in $ArpOutput) {
+                                if ($Line -match $Ip) {
+                                    if ($Line -match '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})') {
+                                        $MacAddr = $Matches[0]
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch {
+                    $MacAddr = ""
+                }
+                
+                if ([string]::IsNullOrEmpty($MacAddr)) {
+                    $MacAddr = "No disponible"
+                }
             }
             
             $Ping.Dispose()
@@ -282,6 +363,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             Status = if ($Active) { "Active" } else { "Inactive" }
             Hostname = $HostName
             OS = $OSDetected
+            MacAddress = $MacAddr
         }
     } -ThrottleLimit 64
 }
@@ -308,44 +390,56 @@ else {
 
 Write-Host "Procesando resultados..." -ForegroundColor Yellow
 
-# Filtrar resultados
+# Filtrar solo hosts activos
 $ActiveHosts = $Results | Where-Object { $_.Status -eq "Active" }
-$InactiveHosts = $Results | Where-Object { $_.Status -eq "Inactive" } | Select-Object -ExpandProperty IP
+$InactiveCount = ($Results | Where-Object { $_.Status -eq "Inactive" }).Count
 
-# Exportar a archivos
+# Generar reporte consolidado
 try {
-    if ($ActiveHosts) {
-        # Formatear salida con IP, Hostname y OS
-        $ActiveHosts | ForEach-Object {
-            if ($_.Hostname -and $_.OS) {
-                "$($_.IP) - $($_.Hostname) - $($_.OS)"
-            }
-            elseif ($_.Hostname) {
-                "$($_.IP) - $($_.Hostname)"
-            }
-            elseif ($_.OS) {
-                "$($_.IP) - $($_.OS)"
-            }
-            else {
-                $_.IP
-            }
-        } | Out-File -FilePath $OutputFileActive -Encoding UTF8 -Force
-    } else {
-        # Crear archivo vacío si no hay activos
-        New-Item -Path $OutputFileActive -ItemType File -Force | Out-Null
+    # Crear contenido del reporte
+    $ReportContent = @()
+    
+    # Encabezado del reporte
+    $ReportContent += "================================================================"
+    $ReportContent += "   REPORTE DE ESCANEO DE RED - MONITOR DE PROTOCOLOS"
+    $ReportContent += "================================================================"
+    $ReportContent += "Fecha y Hora: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    $ReportContent += "Subred escaneada: ${SubnetPrefix}0/24"
+    $ReportContent += "Total de IPs escaneadas: $($Results.Count)"
+    $ReportContent += "Hosts activos encontrados: $($ActiveHosts.Count)"
+    $ReportContent += "Hosts inactivos: $InactiveCount"
+    $ReportContent += "================================================================"
+    $ReportContent += ""
+    
+    if ($ActiveHosts.Count -gt 0) {
+        $ReportContent += "HOSTS ACTIVOS DETECTADOS:"
+        $ReportContent += "----------------------------------------------------------------"
+        $ReportContent += ""
+        
+        foreach ($ActiveHost in $ActiveHosts) {
+            $ReportContent += "IP: $($ActiveHost.IP)"
+            $ReportContent += "Hostname: $($ActiveHost.Hostname)"
+            $ReportContent += "OS: $($ActiveHost.OS)"
+            $ReportContent += "MAC Address: $($ActiveHost.MacAddress)"
+            $ReportContent += ""
+        }
     }
-
-    if ($InactiveHosts) {
-        $InactiveHosts | Out-File -FilePath $OutputFileInactive -Encoding UTF8 -Force
-    } else {
-        # Crear archivo vacío si no hay inactivos
-        New-Item -Path $OutputFileInactive -ItemType File -Force | Out-Null
+    else {
+        $ReportContent += "No se encontraron hosts activos en la red."
+        $ReportContent += ""
     }
     
-    Write-Host "Resultados exportados correctamente." -ForegroundColor Green
+    $ReportContent += "================================================================"
+    $ReportContent += "Fin del reporte"
+    $ReportContent += "================================================================"
+    
+    # Exportar reporte
+    $ReportContent | Out-File -FilePath $OutputFileReport -Encoding UTF8 -Force
+    
+    Write-Host "Reporte generado correctamente." -ForegroundColor Green
 }
 catch {
-    Write-Error "Error al exportar archivos: $_"
+    Write-Error "Error al generar reporte: $_"
 }
 
 # ==============================================================================
@@ -355,11 +449,10 @@ catch {
 Write-Host "----------------------------------------------------------------"
 Write-Host "RESUMEN DEL ESCANEO" -ForegroundColor Cyan
 Write-Host "----------------------------------------------------------------"
-Write-Host "Total IPs escaneadas : $TotalHosts"
-Write-Host "IPs Activas          : $(@($ActiveHosts).Count)" -ForegroundColor Green
-Write-Host "IPs Inactivas        : $(@($InactiveHosts).Count)" -ForegroundColor Red
+Write-Host "Total IPs escaneadas : $($Results.Count)"
+Write-Host "IPs Activas          : $($ActiveHosts.Count)" -ForegroundColor Green
+Write-Host "IPs Inactivas        : $InactiveCount" -ForegroundColor Red
 Write-Host "----------------------------------------------------------------"
-Write-Host "Archivos generados:"
-Write-Host " -> $OutputFileActive"
-Write-Host " -> $OutputFileInactive"
+Write-Host "Archivo generado:"
+Write-Host " -> $OutputFileReport"
 Write-Host "================================================================"
