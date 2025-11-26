@@ -47,10 +47,10 @@ y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 ### Changed
 - Mejora en la precisión del timestamp de captura (milisegundos).
 
-## [0.1.0] - 2023-08-01
+## [0.1.0] - 2025-11-25
 
 ### Added
-- Configuración inicial del repositorio y estructura del proyecto.
-- Archivo `README.md` inicial.
-- Servicio de Windows básico (esqueleto) que se instala y arranca.
-- API REST "Hola Mundo" en Node.js para pruebas de conectividad.
+- Estructura inicial del proyecto.
+- Archivos base: README, CONTRIBUTING, CHANGELOG, LICENSE, .gitignore.
+- Configuración inicial de ramas y milestones.
+
