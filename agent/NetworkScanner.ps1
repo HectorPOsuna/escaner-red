@@ -66,7 +66,7 @@ function Test-HostConnectivity {
     .INPUTS
         IpAddress (String)
     .OUTPUTS
-        PSCustomObject { IP, Status }
+        PSCustomObject { IP, Status, Hostname }
     #>
     param (
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
@@ -74,6 +74,7 @@ function Test-HostConnectivity {
     )
 
     $IsActive = $false
+    $Hostname = ""
 
     try {
         # Usar clase .NET Ping para mayor control sobre el Timeout (ms) y mejor rendimiento
@@ -82,6 +83,17 @@ function Test-HostConnectivity {
         $Reply = $Ping.Send($IpAddress, $PingTimeoutMs)
         $IsActive = ($Reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
         $Ping.Dispose()
+        
+        # Si el host está activo, intentar resolver el hostname
+        if ($IsActive) {
+            try {
+                $Hostname = [System.Net.Dns]::GetHostEntry($IpAddress).HostName
+            }
+            catch {
+                # Si no se puede resolver, dejar vacío
+                $Hostname = ""
+            }
+        }
     }
     catch {
         # En caso de error de ejecución (no de ping fallido), asumimos inactivo
@@ -91,6 +103,7 @@ function Test-HostConnectivity {
     return [PSCustomObject]@{
         IP = $IpAddress
         Status = if ($IsActive) { "Active" } else { "Inactive" }
+        Hostname = $Hostname
     }
 }
 
@@ -115,12 +128,24 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
         $Ip = $_
         $Timeout = $using:PingTimeoutMs
         $Active = $false
+        $HostName = ""
         
         try {
             $Ping = [System.Net.NetworkInformation.Ping]::new()
             $Reply = $Ping.Send($Ip, $Timeout)
             $Active = ($Reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
             $Ping.Dispose()
+            
+            # Si el host está activo, intentar resolver el hostname
+            if ($Active) {
+                try {
+                    $HostName = [System.Net.Dns]::GetHostEntry($Ip).HostName
+                }
+                catch {
+                    # Si no se puede resolver, dejar vacío
+                    $HostName = ""
+                }
+            }
         } catch { 
             $Active = $false 
         }
@@ -129,6 +154,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
         [PSCustomObject]@{
             IP = $Ip
             Status = if ($Active) { "Active" } else { "Inactive" }
+            Hostname = $HostName
         }
     } -ThrottleLimit 64
 }
@@ -156,13 +182,20 @@ else {
 Write-Host "Procesando resultados..." -ForegroundColor Yellow
 
 # Filtrar resultados
-$ActiveHosts = $Results | Where-Object { $_.Status -eq "Active" } | Select-Object -ExpandProperty IP
+$ActiveHosts = $Results | Where-Object { $_.Status -eq "Active" }
 $InactiveHosts = $Results | Where-Object { $_.Status -eq "Inactive" } | Select-Object -ExpandProperty IP
 
 # Exportar a archivos
 try {
     if ($ActiveHosts) {
-        $ActiveHosts | Out-File -FilePath $OutputFileActive -Encoding UTF8 -Force
+        # Formatear salida con IP y Hostname
+        $ActiveHosts | ForEach-Object {
+            if ($_.Hostname) {
+                "$($_.IP) - $($_.Hostname)"
+            } else {
+                $_.IP
+            }
+        } | Out-File -FilePath $OutputFileActive -Encoding UTF8 -Force
     } else {
         # Crear archivo vacío si no hay activos
         New-Item -Path $OutputFileActive -ItemType File -Force | Out-Null
