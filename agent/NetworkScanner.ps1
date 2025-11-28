@@ -24,6 +24,7 @@ $SubnetPrefix = "192.168.1."
 
 # Archivos de salida
 $OutputFileReport = Join-Path -Path $PSScriptRoot -ChildPath "reporte_de_red.txt"
+$ScanHistoryFile = Join-Path -Path $PSScriptRoot -ChildPath "ultimo_escaneo.txt"
 
 # Configuración de Ping
 $PingCount = 1
@@ -36,12 +37,25 @@ try {
     $IsInDomain = $false
 }
 
+# Leer información del último escaneo
+$LastScanInfo = ""
+if (Test-Path $ScanHistoryFile) {
+    try {
+        $LastScanInfo = Get-Content $ScanHistoryFile -Raw -ErrorAction SilentlyContinue
+    } catch {
+        $LastScanInfo = "No disponible"
+    }
+} else {
+    $LastScanInfo = "Primer escaneo"
+}
+
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "   INICIANDO ESCÁNER DE RED - MONITOR DE PROTOCOLOS" -ForegroundColor Cyan
 Write-Host "================================================================"
 Write-Host "Subred objetivo: ${SubnetPrefix}0/24"
 Write-Host "Version de PowerShell: $($PSVersionTable.PSVersion.ToString())"
 Write-Host "En dominio: $(if ($IsInDomain) { 'Sí (usando WMI/CIM + TTL)' } else { 'No (usando solo TTL)' })"
+Write-Host "Último escaneo: $LastScanInfo" -ForegroundColor Yellow
 Write-Host "----------------------------------------------------------------"
 
 # ==============================================================================
@@ -626,3 +640,11 @@ Write-Host "----------------------------------------------------------------"
 Write-Host "Archivo generado:"
 Write-Host " -> $OutputFileReport"
 Write-Host "================================================================"
+
+# Guardar información del escaneo actual para futuras referencias
+try {
+    $CurrentScanTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $CurrentScanTime | Out-File -FilePath $ScanHistoryFile -Encoding UTF8 -Force
+} catch {
+    Write-Warning "No se pudo guardar el historial del escaneo"
+}
