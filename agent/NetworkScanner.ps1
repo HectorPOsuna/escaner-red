@@ -360,6 +360,7 @@ function Get-OpenPorts {
                     Port = $PortInfo.Port
                     Protocol = $PortInfo.Protocol
                     Status = "Open"
+                    DetectedAt = Get-Date -Format "HH:mm:ss"
                 }
             }
         }
@@ -617,6 +618,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                                     Port = $PortInfo.Port
                                     Protocol = $PortInfo.Protocol
                                     Status = "Open"
+                                    DetectedAt = Get-Date -Format "HH:mm:ss"
                                 }
                             }
                         } catch {
@@ -699,16 +701,18 @@ try {
             $ReportContent += "MAC Address: $($ActiveHost.MacAddress)"
             $ReportContent += "Fabricante: $($ActiveHost.Manufacturer)"
             
-            # Agregar información de puertos
+            # Agregar información de puertos con formato mejorado
             if ($ActiveHost.OpenPorts -and $ActiveHost.OpenPorts.Count -gt 0) {
-                $PortList = ($ActiveHost.OpenPorts | ForEach-Object { "$($_.Port)/$($_.Protocol)" }) -join ", "
-                $ReportContent += "Puertos Abiertos: $PortList"
-                
-                $ServiceList = ($ActiveHost.OpenPorts | ForEach-Object { $_.Protocol }) -join ", "
-                $ReportContent += "Servicios Detectados: $ServiceList"
+                $ReportContent += "Puertos Abiertos: $($ActiveHost.OpenPorts.Count) puerto(s) detectado(s)"
+                $ReportContent += ""
+                $ReportContent += "  Lista de Puertos y Protocolos:"
+                $ReportContent += "  ----------------------------------------"
+                foreach ($Port in $ActiveHost.OpenPorts) {
+                    $ReportContent += "  Puerto: $($Port.Port) | Protocolo: $($Port.Protocol) | Hora: $($Port.DetectedAt)"
+                }
+                $ReportContent += "  ----------------------------------------"
             } else {
-                $ReportContent += "Puertos Abiertos: Ninguno"
-                $ReportContent += "Servicios Detectados: Ninguno"
+                $ReportContent += "Puertos Abiertos: Ninguno detectado"
             }
             
             $ReportContent += ""
