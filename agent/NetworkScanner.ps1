@@ -30,6 +30,26 @@ $ScanHistoryFile = Join-Path -Path $PSScriptRoot -ChildPath "ultimo_escaneo.txt"
 $PingCount = 1
 $PingTimeoutMs = 200 # Timeout en milisegundos (ajustar según latencia de red)
 
+# Configuración de Escaneo de Puertos
+$PortScanEnabled = $true
+$PortScanTimeout = 500 # Timeout en milisegundos por puerto
+$CommonPorts = @(
+    @{Port=21; Protocol="FTP"},
+    @{Port=22; Protocol="SSH"},
+    @{Port=23; Protocol="Telnet"},
+    @{Port=25; Protocol="SMTP"},
+    @{Port=53; Protocol="DNS"},
+    @{Port=80; Protocol="HTTP"},
+    @{Port=110; Protocol="POP3"},
+    @{Port=143; Protocol="IMAP"},
+    @{Port=443; Protocol="HTTPS"},
+    @{Port=445; Protocol="SMB"},
+    @{Port=3306; Protocol="MySQL"},
+    @{Port=3389; Protocol="RDP"},
+    @{Port=5432; Protocol="PostgreSQL"},
+    @{Port=8080; Protocol="HTTP-Alt"}
+)
+
 # Detección de Dominio (para estrategia híbrida de OS detection)
 try {
     $IsInDomain = (Get-WmiObject Win32_ComputerSystem).PartOfDomain
@@ -309,6 +329,49 @@ function Get-ManufacturerFromOUI {
     return "Desconocido"
 }
 
+function Get-OpenPorts {
+    <#
+    .SYNOPSIS
+        Escanea puertos comunes en un host y retorna los que están abiertos.
+    .PARAMETER IpAddress
+        Dirección IP del host a escanear.
+    .PARAMETER Ports
+        Array de hashtables con Port y Protocol.
+    .PARAMETER Timeout
+        Timeout en milisegundos para cada puerto.
+    .OUTPUTS
+        Array de objetos con Port, Protocol, Status.
+    #>
+    param (
+        [string]$IpAddress,
+        [array]$Ports,
+        [int]$Timeout = 500
+    )
+    
+    $OpenPorts = @()
+    
+    foreach ($PortInfo in $Ports) {
+        try {
+            # Usar Test-NetConnection para probar el puerto
+            $TestResult = Test-NetConnection -ComputerName $IpAddress -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
+            
+            if ($TestResult) {
+                $OpenPorts += [PSCustomObject]@{
+                    Port = $PortInfo.Port
+                    Protocol = $PortInfo.Protocol
+                    Status = "Open"
+                }
+            }
+        }
+        catch {
+            # Si hay error, el puerto está cerrado o filtrado
+            continue
+        }
+    }
+    
+    return $OpenPorts
+}
+
 function Test-HostConnectivity {
     <#
     .SYNOPSIS
@@ -316,7 +379,7 @@ function Test-HostConnectivity {
     .INPUTS
         IpAddress (String)
     .OUTPUTS
-        PSCustomObject { IP, Status, Hostname, OS, MacAddress, Manufacturer }
+        PSCustomObject { IP, Status, Hostname, OS, MacAddress, Manufacturer, OpenPorts }
     #>
     param (
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
@@ -328,6 +391,7 @@ function Test-HostConnectivity {
     $OS = ""
     $MacAddress = ""
     $Manufacturer = ""
+    $OpenPorts = @()
 
     try {
         # Usar clase .NET Ping para mayor control sobre el Timeout (ms) y mejor rendimiento
@@ -369,6 +433,11 @@ function Test-HostConnectivity {
             
             # Obtener fabricante desde OUI
             $Manufacturer = Get-ManufacturerFromOUI -MacAddress $MacAddress
+            
+            # Escanear puertos si está habilitado
+            if ($PortScanEnabled) {
+                $OpenPorts = Get-OpenPorts -IpAddress $IpAddress -Ports $CommonPorts -Timeout $PortScanTimeout
+            }
         }
         
         $Ping.Dispose()
@@ -385,6 +454,7 @@ function Test-HostConnectivity {
         OS = $OS
         MacAddress = $MacAddress
         Manufacturer = $Manufacturer
+        OpenPorts = $OpenPorts
     }
 }
 
@@ -409,11 +479,15 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
         $Ip = $_
         $Timeout = $using:PingTimeoutMs
         $InDomain = $using:IsInDomain
+        $PortsToScan = $using:CommonPorts
+        $PortTimeout = $using:PortScanTimeout
+        $ScanPorts = $using:PortScanEnabled
         $Active = $false
         $HostName = ""
         $OSDetected = ""
         $MacAddr = ""
         $Manuf = ""
+        $Ports = @()
         
         try {
             $Ping = [System.Net.NetworkInformation.Ping]::new()
@@ -532,6 +606,24 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                         $Manuf = "Desconocido"
                     }
                 }
+                
+                # Escanear puertos si está habilitado
+                if ($ScanPorts) {
+                    foreach ($PortInfo in $PortsToScan) {
+                        try {
+                            $TestResult = Test-NetConnection -ComputerName $Ip -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
+                            if ($TestResult) {
+                                $Ports += [PSCustomObject]@{
+                                    Port = $PortInfo.Port
+                                    Protocol = $PortInfo.Protocol
+                                    Status = "Open"
+                                }
+                            }
+                        } catch {
+                            continue
+                        }
+                    }
+                }
             }
             
             $Ping.Dispose()
@@ -547,6 +639,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             OS = $OSDetected
             MacAddress = $MacAddr
             Manufacturer = $Manuf
+            OpenPorts = $Ports
         }
     } -ThrottleLimit 64
 }
@@ -605,6 +698,19 @@ try {
             $ReportContent += "OS: $($ActiveHost.OS)"
             $ReportContent += "MAC Address: $($ActiveHost.MacAddress)"
             $ReportContent += "Fabricante: $($ActiveHost.Manufacturer)"
+            
+            # Agregar información de puertos
+            if ($ActiveHost.OpenPorts -and $ActiveHost.OpenPorts.Count -gt 0) {
+                $PortList = ($ActiveHost.OpenPorts | ForEach-Object { "$($_.Port)/$($_.Protocol)" }) -join ", "
+                $ReportContent += "Puertos Abiertos: $PortList"
+                
+                $ServiceList = ($ActiveHost.OpenPorts | ForEach-Object { $_.Protocol }) -join ", "
+                $ReportContent += "Servicios Detectados: $ServiceList"
+            } else {
+                $ReportContent += "Puertos Abiertos: Ninguno"
+                $ReportContent += "Servicios Detectados: Ninguno"
+            }
+            
             $ReportContent += ""
         }
     }
