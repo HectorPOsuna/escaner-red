@@ -1,0 +1,21 @@
+{
+  "name": "escaner-red-database",
+  "version": "1.0.0",
+  "description": "Módulo de base de datos para el escáner de red",
+  "main": "dbConnection.js",
+  "scripts": {
+    "init-db": "node initDB.js",
+    "test-connection": "node -e \"require('./dbConnection').testConnection()\""
+  },
+  "keywords": [
+    "mysql",
+    "database",
+    "network-scanner"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "mysql2": "^3.6.5",
+    "dotenv": "^16.3.1"
+  }
+}
