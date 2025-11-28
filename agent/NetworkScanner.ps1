@@ -50,6 +50,10 @@ $CommonPorts = @(
     @{Port=8080; Protocol="HTTP-Alt"}
 )
 
+# Configuración de Caché de Puertos
+$PortCacheFile = Join-Path -Path $PSScriptRoot -ChildPath "port_scan_cache.json"
+$PortCacheTTLMinutes = 10
+
 # Detección de Dominio (para estrategia híbrida de OS detection)
 try {
     $IsInDomain = (Get-WmiObject Win32_ComputerSystem).PartOfDomain
@@ -329,6 +333,7 @@ function Get-ManufacturerFromOUI {
     return "Desconocido"
 }
 
+
 function Get-OpenPorts {
     <#
     .SYNOPSIS
@@ -339,29 +344,45 @@ function Get-OpenPorts {
         Array de hashtables con Port y Protocol.
     .PARAMETER Timeout
         Timeout en milisegundos para cada puerto.
+    .PARAMETER Cache
+        Hashtable con el caché de puertos.
     .OUTPUTS
-        Array de objetos con Port, Protocol, Status.
+        Array de objetos con Port, Protocol, Status, DetectedAt.
     #>
     param (
         [string]$IpAddress,
         [array]$Ports,
-        [int]$Timeout = 500
+        [int]$Timeout = 500,
+        [hashtable]$Cache = @{}
     )
     
     $OpenPorts = @()
     
     foreach ($PortInfo in $Ports) {
+        # Verificar si el puerto está en caché y es válido
+        $CachedPort = Test-PortInCache -Cache $Cache -IpAddress $IpAddress -Port $PortInfo.Port
+        
+        if ($CachedPort) {
+            # Usar resultado del caché
+            $OpenPorts += $CachedPort
+            continue
+        }
+        
+        # No está en caché o expiró, escanear
         try {
-            # Usar Test-NetConnection para probar el puerto
             $TestResult = Test-NetConnection -ComputerName $IpAddress -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
             
             if ($TestResult) {
-                $OpenPorts += [PSCustomObject]@{
+                $PortResult = [PSCustomObject]@{
                     Port = $PortInfo.Port
                     Protocol = $PortInfo.Protocol
                     Status = "Open"
                     DetectedAt = Get-Date -Format "HH:mm:ss"
                 }
+                $OpenPorts += $PortResult
+                
+                # Agregar al caché
+                Add-PortToCache -Cache $Cache -IpAddress $IpAddress -PortInfo $PortResult
             }
         }
         catch {
@@ -371,6 +392,152 @@ function Get-OpenPorts {
     }
     
     return $OpenPorts
+}
+
+# ==============================================================================
+# FUNCIONES DE CACHÉ DE PUERTOS
+# ==============================================================================
+
+function Read-PortCache {
+    <#
+    .SYNOPSIS
+        Lee el caché de puertos desde el archivo JSON.
+    .OUTPUTS
+        Hashtable con el caché de puertos.
+    #>
+    if (Test-Path $PortCacheFile) {
+        try {
+            $JsonContent = Get-Content $PortCacheFile -Raw -ErrorAction Stop
+            $CacheData = $JsonContent | ConvertFrom-Json
+            
+            # Convertir a hashtable para acceso rápido
+            $Cache = @{}
+            $CacheData.PSObject.Properties | ForEach-Object {
+                $Cache[$_.Name] = $_.Value
+            }
+            return $Cache
+        }
+        catch {
+            return @{}
+        }
+    }
+    return @{}
+}
+
+function Write-PortCache {
+    <#
+    .SYNOPSIS
+        Guarda el caché de puertos en el archivo JSON.
+    .PARAMETER Cache
+        Hashtable con el caché de puertos.
+    #>
+    param (
+        [hashtable]$Cache
+    )
+    
+    try {
+        $Cache | ConvertTo-Json -Depth 3 | Out-File -FilePath $PortCacheFile -Encoding UTF8 -Force
+    }
+    catch {
+        Write-Warning "No se pudo guardar el caché de puertos: $_"
+    }
+}
+
+function Test-PortInCache {
+    <#
+    .SYNOPSIS
+        Verifica si un puerto está en caché y aún es válido.
+    .PARAMETER Cache
+        Hashtable con el caché.
+    .PARAMETER IpAddress
+        Dirección IP.
+    .PARAMETER Port
+        Número de puerto.
+    .OUTPUTS
+        PSCustomObject con la información del puerto si está en caché y es válido, $null si no.
+    #>
+    param (
+        [hashtable]$Cache,
+        [string]$IpAddress,
+        [int]$Port
+    )
+    
+    $Key = "${IpAddress}:${Port}"
+    
+    if ($Cache.ContainsKey($Key)) {
+        $Entry = $Cache[$Key]
+        $LastScanned = [DateTime]::Parse($Entry.LastScanned)
+        $Age = (Get-Date) - $LastScanned
+        
+        if ($Age.TotalMinutes -lt $PortCacheTTLMinutes) {
+            # Entrada válida, retornar datos
+            return [PSCustomObject]@{
+                Port = $Entry.Port
+                Protocol = $Entry.Protocol
+                Status = $Entry.Status
+                DetectedAt = $Entry.DetectedAt
+            }
+        }
+    }
+    
+    return $null
+}
+
+function Add-PortToCache {
+    <#
+    .SYNOPSIS
+        Agrega un puerto al caché.
+    .PARAMETER Cache
+        Hashtable con el caché.
+    .PARAMETER IpAddress
+        Dirección IP.
+    .PARAMETER PortInfo
+        Objeto con información del puerto.
+    #>
+    param (
+        [hashtable]$Cache,
+        [string]$IpAddress,
+        [PSCustomObject]$PortInfo
+    )
+    
+    $Key = "${IpAddress}:$($PortInfo.Port)"
+    
+    $Cache[$Key] = @{
+        IP = $IpAddress
+        Port = $PortInfo.Port
+        Protocol = $PortInfo.Protocol
+        Status = $PortInfo.Status
+        LastScanned = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+        DetectedAt = $PortInfo.DetectedAt
+    }
+}
+
+function Clean-ExpiredCache {
+    <#
+    .SYNOPSIS
+        Limpia entradas expiradas del caché.
+    .PARAMETER Cache
+        Hashtable con el caché.
+    #>
+    param (
+        [hashtable]$Cache
+    )
+    
+    $ExpiredKeys = @()
+    
+    foreach ($Key in $Cache.Keys) {
+        $Entry = $Cache[$Key]
+        $LastScanned = [DateTime]::Parse($Entry.LastScanned)
+        $Age = (Get-Date) - $LastScanned
+        
+        if ($Age.TotalMinutes -ge $PortCacheTTLMinutes) {
+            $ExpiredKeys += $Key
+        }
+    }
+    
+    foreach ($Key in $ExpiredKeys) {
+        $Cache.Remove($Key)
+    }
 }
 
 function Test-HostConnectivity {
@@ -384,7 +551,8 @@ function Test-HostConnectivity {
     #>
     param (
         [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
-        [string]$IpAddress
+        [string]$IpAddress,
+        [hashtable]$Cache = @{}
     )
 
     $IsActive = $false
@@ -437,7 +605,7 @@ function Test-HostConnectivity {
             
             # Escanear puertos si está habilitado
             if ($PortScanEnabled) {
-                $OpenPorts = Get-OpenPorts -IpAddress $IpAddress -Ports $CommonPorts -Timeout $PortScanTimeout
+                $OpenPorts = Get-OpenPorts -IpAddress $IpAddress -Ports $CommonPorts -Timeout $PortScanTimeout -Cache $Cache
             }
         }
         
@@ -463,6 +631,11 @@ function Test-HostConnectivity {
 # SECCIÓN 3: EJECUCIÓN DEL ESCANEO
 # ==============================================================================
 
+# Cargar caché de puertos
+Write-Host "Cargando caché de puertos..." -ForegroundColor Yellow
+$PortCache = Read-PortCache
+Write-Host "Caché cargado: $($PortCache.Count) entradas." -ForegroundColor Green
+
 Write-Host "Generando lista de objetivos..." -ForegroundColor Yellow
 $TargetIps = Get-IpRange -Prefix $SubnetPrefix
 Write-Host "Objetivos generados: $($TargetIps.Count) direcciones." -ForegroundColor Green
@@ -483,6 +656,8 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
         $PortsToScan = $using:CommonPorts
         $PortTimeout = $using:PortScanTimeout
         $ScanPorts = $using:PortScanEnabled
+        $Cache = $using:PortCache
+        $TTL = $using:PortCacheTTLMinutes
         $Active = $false
         $HostName = ""
         $OSDetected = ""
@@ -611,18 +786,40 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 # Escanear puertos si está habilitado
                 if ($ScanPorts) {
                     foreach ($PortInfo in $PortsToScan) {
-                        try {
-                            $TestResult = Test-NetConnection -ComputerName $Ip -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
-                            if ($TestResult) {
+                        # Verificar caché (lógica inline para paralelismo)
+                        $Key = "${Ip}:${PortInfo.Port}"
+                        $Cached = $false
+                        
+                        if ($Cache.ContainsKey($Key)) {
+                            $Entry = $Cache[$Key]
+                            $LastScanned = [DateTime]::Parse($Entry.LastScanned)
+                            $Age = (Get-Date) - $LastScanned
+                            
+                            if ($Age.TotalMinutes -lt $TTL) {
                                 $Ports += [PSCustomObject]@{
-                                    Port = $PortInfo.Port
-                                    Protocol = $PortInfo.Protocol
-                                    Status = "Open"
-                                    DetectedAt = Get-Date -Format "HH:mm:ss"
+                                    Port = $Entry.Port
+                                    Protocol = $Entry.Protocol
+                                    Status = $Entry.Status
+                                    DetectedAt = $Entry.DetectedAt
                                 }
+                                $Cached = $true
                             }
-                        } catch {
-                            continue
+                        }
+                        
+                        if (-not $Cached) {
+                            try {
+                                $TestResult = Test-NetConnection -ComputerName $Ip -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
+                                if ($TestResult) {
+                                    $Ports += [PSCustomObject]@{
+                                        Port = $PortInfo.Port
+                                        Protocol = $PortInfo.Protocol
+                                        Status = "Open"
+                                        DetectedAt = Get-Date -Format "HH:mm:ss"
+                                    }
+                                }
+                            } catch {
+                                continue
+                            }
                         }
                     }
                 }
@@ -657,10 +854,25 @@ else {
             Write-Progress -Activity "Escaneando red..." -Status "Procesando $Ip" -PercentComplete (($Counter / $TotalHosts) * 100)
         }
         
-        $Results += Test-HostConnectivity -IpAddress $Ip
+        $Results += Test-HostConnectivity -IpAddress $Ip -Cache $PortCache
     }
     Write-Progress -Activity "Escaneando red..." -Completed
 }
+
+# Actualizar caché con resultados nuevos
+Write-Host "Actualizando caché de puertos..." -ForegroundColor Yellow
+foreach ($Result in $Results) {
+    if ($Result.OpenPorts) {
+        foreach ($Port in $Result.OpenPorts) {
+            Add-PortToCache -Cache $PortCache -IpAddress $Result.IP -PortInfo $Port
+        }
+    }
+}
+
+# Limpiar y guardar caché
+Clean-ExpiredCache -Cache $PortCache
+Write-PortCache -Cache $PortCache
+Write-Host "Caché actualizado y guardado." -ForegroundColor Green
 
 # ==============================================================================
 # SECCIÓN 4: PROCESAMIENTO Y EXPORTACIÓN
