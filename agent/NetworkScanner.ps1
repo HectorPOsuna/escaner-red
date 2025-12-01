@@ -54,6 +54,11 @@ $CommonPorts = @(
 $PortCacheFile = Join-Path -Path $PSScriptRoot -ChildPath "port_scan_cache.json"
 $PortCacheTTLMinutes = 10
 
+# Configuración de API Backend
+$EnableApiExport = $true
+$ApiUrl = "http://localhost:3000/api/scan-results" # URL por defecto, ajustable
+$ApiKey = "" # Opcional, para futura autenticación
+
 # Detección de Dominio (para estrategia híbrida de OS detection)
 try {
     $IsInDomain = (Get-WmiObject Win32_ComputerSystem).PartOfDomain
@@ -540,6 +545,79 @@ function Clean-ExpiredCache {
     }
 }
 
+function Send-ResultsToApi {
+    <#
+    .SYNOPSIS
+        Envía los resultados del escaneo a la API backend.
+    .PARAMETER Results
+        Array de objetos con los resultados del escaneo.
+    .PARAMETER Subnet
+        Subred escaneada.
+    #>
+    param (
+        [array]$Results,
+        [string]$Subnet
+    )
+    
+    if (-not $EnableApiExport) {
+        return
+    }
+    
+    Write-Host "Preparando envío de datos a la API..." -ForegroundColor Yellow
+    
+    # Filtrar solo hosts activos y formatear para JSON
+    $ActiveHosts = $Results | Where-Object { $_.Status -eq "Active" }
+    
+    if ($ActiveHosts.Count -eq 0) {
+        Write-Host "No hay hosts activos para enviar." -ForegroundColor Yellow
+        return
+    }
+    
+    $HostsPayload = @()
+    
+    foreach ($HostObj in $ActiveHosts) {
+        $OpenPortsList = @()
+        if ($HostObj.OpenPorts) {
+            foreach ($Port in $HostObj.OpenPorts) {
+                $OpenPortsList += @{
+                    port = $Port.Port
+                    protocol = $Port.Protocol
+                    detected_at = $Port.DetectedAt
+                }
+            }
+        }
+        
+        $HostsPayload += @{
+            ip = $HostObj.IP
+            mac = $HostObj.MacAddress
+            hostname = $HostObj.Hostname
+            manufacturer = $HostObj.Manufacturer
+            os = $HostObj.OS
+            open_ports = $OpenPortsList
+        }
+    }
+    
+    $Payload = @{
+        scan_timestamp = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+        subnet = "${Subnet}0/24"
+        hosts = $HostsPayload
+    }
+    
+    try {
+        $JsonPayload = $Payload | ConvertTo-Json -Depth 10
+        
+        Write-Host "Enviando $($HostsPayload.Count) hosts a $ApiUrl..." -ForegroundColor Cyan
+        
+        $Response = Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $JsonPayload -ContentType "application/json" -ErrorAction Stop
+        
+        Write-Host "✅ Datos enviados correctamente a la API." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "❌ Error al enviar datos a la API: $($_.Exception.Message)"
+        # No detenemos el script, solo notificamos el error de envío
+    }
+}
+
 function Test-HostConnectivity {
     <#
     .SYNOPSIS
@@ -970,3 +1048,6 @@ try {
 } catch {
     Write-Warning "No se pudo guardar el historial del escaneo"
 }
+
+# Enviar resultados a la API
+Send-ResultsToApi -Results $Results -Subnet $SubnetPrefix
