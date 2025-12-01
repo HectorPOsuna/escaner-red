@@ -4,5 +4,9 @@
   },
   "scripts": {
     "changelog": "conventional-changelog -p angular -i ./docs/CHANGELOG.md -s"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "mysql2": "^3.15.3"
   }
 }

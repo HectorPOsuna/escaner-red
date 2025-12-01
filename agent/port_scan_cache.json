@@ -1,0 +1,42 @@
+﻿{
+    "192.168.1.254:53":  {
+                             "Port":  53,
+                             "DetectedAt":  "22:31:34",
+                             "IP":  "192.168.1.254",
+                             "LastScanned":  "2025-11-30T22:32:09",
+                             "Status":  "Open",
+                             "Protocol":  "DNS"
+                         },
+    "192.168.1.254:80":  {
+                             "Port":  80,
+                             "DetectedAt":  "22:31:34",
+                             "IP":  "192.168.1.254",
+                             "LastScanned":  "2025-11-30T22:32:09",
+                             "Status":  "Open",
+                             "Protocol":  "HTTP"
+                         },
+    "192.168.1.100:445":  {
+                              "Port":  445,
+                              "DetectedAt":  "22:29:03",
+                              "IP":  "192.168.1.100",
+                              "LastScanned":  "2025-11-30T22:32:09",
+                              "Status":  "Open",
+                              "Protocol":  "SMB"
+                          },
+    "192.168.1.100:5432":  {
+                               "Port":  5432,
+                               "DetectedAt":  "22:29:05",
+                               "IP":  "192.168.1.100",
+                               "LastScanned":  "2025-11-30T22:32:09",
+                               "Status":  "Open",
+                               "Protocol":  "PostgreSQL"
+                           },
+    "192.168.1.100:3306":  {
+                               "Port":  3306,
+                               "DetectedAt":  "22:29:03",
+                               "IP":  "192.168.1.100",
+                               "LastScanned":  "2025-11-30T22:32:09",
+                               "Status":  "Open",
+                               "Protocol":  "MySQL"
+                           }
+}
