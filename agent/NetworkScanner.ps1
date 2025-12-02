@@ -91,6 +91,60 @@ Write-Host "----------------------------------------------------------------"
 # SECCIÓN 2: FUNCIONES AUXILIARES
 # ==============================================================================
 
+function Start-BackendServices {
+    <#
+    .SYNOPSIS
+        Inicia los servicios de backend (Node.js) si no están corriendo.
+    #>
+    $Port = 3000
+    $ServerPath = Join-Path -Path $PSScriptRoot -ChildPath "..\server\app.js"
+    $ServerDir = Join-Path -Path $PSScriptRoot -ChildPath "..\server"
+    
+    # Verificar si el puerto está en uso
+    $PortInUse = $false
+    try {
+        $TcpConnection = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+        if ($TcpConnection) { $PortInUse = $true }
+    } catch {
+        # Fallback para versiones antiguas de PS
+        $PortInUse = $false
+    }
+
+    if (-not $PortInUse) {
+        Write-Host "Iniciando servidor backend en segundo plano..." -ForegroundColor Cyan
+        
+        # Intentar encontrar node.exe
+        $NodeExe = "node"
+        if (Test-Path "C:\Program Files\nodejs\node.exe") {
+            $NodeExe = "C:\Program Files\nodejs\node.exe"
+        }
+        
+        try {
+            # Iniciar proceso de forma silenciosa
+            $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $ProcessInfo.FileName = $NodeExe
+            $ProcessInfo.Arguments = "app.js"
+            $ProcessInfo.WorkingDirectory = $ServerDir
+            $ProcessInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+            $ProcessInfo.CreateNoWindow = $true
+            $ProcessInfo.UseShellExecute = $true
+            
+            [System.Diagnostics.Process]::Start($ProcessInfo) | Out-Null
+            
+            # Esperar un momento para que inicie
+            Start-Sleep -Seconds 3
+            Write-Host "Servidor iniciado correctamente." -ForegroundColor Green
+        } catch {
+            Write-Warning "No se pudo iniciar el servidor backend automáticamente. Asegúrate de tener Node.js instalado."
+        }
+    } else {
+        # Write-Host "Servidor backend ya está corriendo." -ForegroundColor DarkGray
+    }
+}
+
+# Iniciar servicios antes de continuar
+Start-BackendServices
+
 function Get-IpRange {
     <#
     .SYNOPSIS
@@ -222,119 +276,7 @@ function Get-ManufacturerFromOUI {
         [string]$MacAddress
     )
     
-    if ([string]::IsNullOrEmpty($MacAddress) -or $MacAddress -eq "No disponible") {
-        return "Desconocido"
-    }
-    
-    # Extraer los primeros 3 octetos (OUI) y normalizar
-    $OUI = $MacAddress -replace '[:-]', '' | Select-Object -First 6
-    $OUI = $OUI.ToUpper().Substring(0, [Math]::Min(6, $OUI.Length))
-    
-    # Base de datos de OUI embebida (fabricantes comunes)
-    $OUIDatabase = @{
-        # Cisco
-        "00000C" = "Cisco Systems"
-        "000142" = "Cisco Systems"
-        "000163" = "Cisco Systems"
-        "0001C7" = "Cisco Systems"
-        "0050F2" = "Cisco Systems"
-        "001CBF" = "Cisco Systems"
-        
-        # Intel
-        "0003FF" = "Intel Corporation"
-        "001517" = "Intel Corporation"
-        "001B21" = "Intel Corporation"
-        "7054D2" = "Intel Corporation"
-        "D4BED9" = "Intel Corporation"
-        
-        # Apple
-        "000393" = "Apple, Inc."
-        "000A27" = "Apple, Inc."
-        "000A95" = "Apple, Inc."
-        "001451" = "Apple, Inc."
-        "0016CB" = "Apple, Inc."
-        "001EC2" = "Apple, Inc."
-        "0050E4" = "Apple, Inc."
-        "A4C361" = "Apple, Inc."
-        
-        # Dell
-        "000874" = "Dell Inc."
-        "000BDB" = "Dell Inc."
-        "000D56" = "Dell Inc."
-        "000F1F" = "Dell Inc."
-        "001372" = "Dell Inc."
-        "0015C5" = "Dell Inc."
-        "B8CA3A" = "Dell Inc."
-        
-        # HP/Hewlett Packard
-        "000805" = "HP"
-        "001279" = "HP"
-        "001438" = "HP"
-        "001560" = "HP"
-        "001E0B" = "HP"
-        "002264" = "HP"
-        "D89EF3" = "HP"
-        
-        # Realtek
-        "00E04C" = "Realtek Semiconductor"
-        "525400" = "Realtek Semiconductor"
-        "E03F49" = "Realtek Semiconductor"
-        
-        # TP-Link
-        "001D0F" = "TP-Link Technologies"
-        "0C8268" = "TP-Link Technologies"
-        "1C61B4" = "TP-Link Technologies"
-        "50C7BF" = "TP-Link Technologies"
-        "A42BB0" = "TP-Link Technologies"
-        
-        # D-Link
-        "000D88" = "D-Link Corporation"
-        "001346" = "D-Link Corporation"
-        "001B11" = "D-Link Corporation"
-        "0022B0" = "D-Link Corporation"
-        "C8D3A3" = "D-Link Corporation"
-        
-        # Netgear
-        "000FB5" = "Netgear"
-        "001B2F" = "Netgear"
-        "001E2A" = "Netgear"
-        "002275" = "Netgear"
-        "A040A0" = "Netgear"
-        
-        # VMware
-        "005056" = "VMware, Inc."
-        "000C29" = "VMware, Inc."
-        "000569" = "VMware, Inc."
-        
-        # Microsoft
-        "000D3A" = "Microsoft Corporation"
-        "001DD8" = "Microsoft Corporation"
-        "7C1E52" = "Microsoft Corporation"
-        
-        # Samsung
-        "0012FB" = "Samsung Electronics"
-        "001377" = "Samsung Electronics"
-        "0015B9" = "Samsung Electronics"
-        "001D25" = "Samsung Electronics"
-        "E8508B" = "Samsung Electronics"
-        
-        # Huawei
-        "000E0C" = "Huawei Technologies"
-        "001E10" = "Huawei Technologies"
-        "0025BC" = "Huawei Technologies"
-        "F8E71E" = "Huawei Technologies"
-        
-        # Xiaomi
-        "64B473" = "Xiaomi Communications"
-        "F8A45F" = "Xiaomi Communications"
-        "34CE00" = "Xiaomi Communications"
-    }
-    
-    # Buscar en la base de datos
-    if ($OUIDatabase.ContainsKey($OUI)) {
-        return $OUIDatabase[$OUI]
-    }
-    
+    # La resolución de fabricantes ahora se maneja en el backend
     return "Desconocido"
 }
 
@@ -798,30 +740,18 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 }
                 
                 # Obtener dirección MAC desde ARP
-                try {
-                    if (Get-Command Get-NetNeighbor -ErrorAction SilentlyContinue) {
-                        $Neighbor = Get-NetNeighbor -IPAddress $Ip -ErrorAction SilentlyContinue
-                        if ($Neighbor -and $Neighbor.LinkLayerAddress) {
-                            $MacAddr = $Neighbor.LinkLayerAddress
-                        }
-                    }
-                    
-                    if ([string]::IsNullOrEmpty($MacAddr)) {
-                        $ArpOutput = arp -a $Ip 2>$null
-                        if ($ArpOutput) {
-                            foreach ($Line in $ArpOutput) {
-                                if ($Line -match $Ip) {
-                                    if ($Line -match '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})') {
-                                        $MacAddr = $Matches[0]
-                                        break
-                                    }
+                if ([string]::IsNullOrEmpty($MacAddr)) {
+                    $ArpOutput = arp -a $Ip 2>$null
+                    if ($ArpOutput) {
+                        foreach ($Line in $ArpOutput) {
+                            if ($Line -match $Ip) {
+                                if ($Line -match '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})') {
+                                    $MacAddr = $Matches[0]
+                                    break
                                 }
                             }
                         }
                     }
-                }
-                catch {
-                    $MacAddr = ""
                 }
                 
                 if ([string]::IsNullOrEmpty($MacAddr)) {
@@ -829,37 +759,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 }
                 
                 # Obtener fabricante desde OUI
-                if ([string]::IsNullOrEmpty($MacAddr) -or $MacAddr -eq "No disponible") {
-                    $Manuf = "Desconocido"
-                } else {
-                    # Extraer OUI y buscar fabricante
-                    $OUI = $MacAddr -replace '[:-]', ''
-                    $OUI = $OUI.ToUpper().Substring(0, [Math]::Min(6, $OUI.Length))
-                    
-                    # Base de datos OUI (mismo que en Get-ManufacturerFromOUI)
-                    $OUIDb = @{
-                        "00000C"="Cisco Systems";"000142"="Cisco Systems";"000163"="Cisco Systems";"0001C7"="Cisco Systems";"0050F2"="Cisco Systems";"001CBF"="Cisco Systems"
-                        "0003FF"="Intel Corporation";"001517"="Intel Corporation";"001B21"="Intel Corporation";"7054D2"="Intel Corporation";"D4BED9"="Intel Corporation"
-                        "000393"="Apple, Inc.";"000A27"="Apple, Inc.";"000A95"="Apple, Inc.";"001451"="Apple, Inc.";"0016CB"="Apple, Inc.";"001EC2"="Apple, Inc.";"0050E4"="Apple, Inc.";"A4C361"="Apple, Inc."
-                        "000874"="Dell Inc.";"000BDB"="Dell Inc.";"000D56"="Dell Inc.";"000F1F"="Dell Inc.";"001372"="Dell Inc.";"0015C5"="Dell Inc.";"B8CA3A"="Dell Inc."
-                        "000805"="HP";"001279"="HP";"001438"="HP";"001560"="HP";"001E0B"="HP";"002264"="HP";"D89EF3"="HP"
-                        "00E04C"="Realtek Semiconductor";"525400"="Realtek Semiconductor";"E03F49"="Realtek Semiconductor"
-                        "001D0F"="TP-Link Technologies";"0C8268"="TP-Link Technologies";"1C61B4"="TP-Link Technologies";"50C7BF"="TP-Link Technologies";"A42BB0"="TP-Link Technologies"
-                        "000D88"="D-Link Corporation";"001346"="D-Link Corporation";"001B11"="D-Link Corporation";"0022B0"="D-Link Corporation";"C8D3A3"="D-Link Corporation"
-                        "000FB5"="Netgear";"001B2F"="Netgear";"001E2A"="Netgear";"002275"="Netgear";"A040A0"="Netgear"
-                        "005056"="VMware, Inc.";"000C29"="VMware, Inc.";"000569"="VMware, Inc."
-                        "000D3A"="Microsoft Corporation";"001DD8"="Microsoft Corporation";"7C1E52"="Microsoft Corporation"
-                        "0012FB"="Samsung Electronics";"001377"="Samsung Electronics";"0015B9"="Samsung Electronics";"001D25"="Samsung Electronics";"E8508B"="Samsung Electronics"
-                        "000E0C"="Huawei Technologies";"001E10"="Huawei Technologies";"0025BC"="Huawei Technologies";"F8E71E"="Huawei Technologies"
-                        "64B473"="Xiaomi Communications";"F8A45F"="Xiaomi Communications";"34CE00"="Xiaomi Communications"
-                    }
-                    
-                    if ($OUIDb.ContainsKey($OUI)) {
-                        $Manuf = $OUIDb[$OUI]
-                    } else {
-                        $Manuf = "Desconocido"
-                    }
-                }
+                $Manuf = "Desconocido"
                 
                 # Escanear puertos si está habilitado
                 if ($ScanPorts) {
