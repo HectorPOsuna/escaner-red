@@ -109,12 +109,22 @@ async function processScanResults(req, res) {
             // c) Protocolos
             if (host.open_ports && Array.isArray(host.open_ports)) {
                 for (const portInfo of host.open_ports) {
-                    // Asegurar que el protocolo existe en el catálogo
-                    const protocoloId = await dbService.createProtocolo(
-                        portInfo.port, 
-                        portInfo.protocol || 'Unknown', 
-                        'otro' // Categoría por defecto
-                    );
+                    let protocoloId = null;
+
+                    // 1. Intentar buscar el protocolo en nuestro catálogo (prioridad a IANA/Seed)
+                    const existingProtocol = await dbService.getProtocoloByPort(portInfo.port);
+                    
+                    if (existingProtocol) {
+                        protocoloId = existingProtocol.id_protocolo;
+                    } else {
+                        // 2. Si no existe, lo creamos con la información del agente (o Unknown)
+                        // Esto permite aprender nuevos puertos no catalogados
+                        protocoloId = await dbService.createProtocolo(
+                            portInfo.port, 
+                            portInfo.protocol || 'Unknown', 
+                            'otro'
+                        );
+                    }
 
                     // Registrar uso
                     if (protocoloId) {
@@ -122,9 +132,7 @@ async function processScanResults(req, res) {
                             equipoId, 
                             protocoloId, 
                             portInfo.port, 
-                            // Convertir timestamp de PowerShell a formato MySQL si es necesario, o usar NOW()
-                            // El formato de PS es "HH:mm:ss", le falta fecha. Usaremos la fecha del scan_timestamp
-                            new Date() // Simplificación: usar hora actual del servidor
+                            new Date() // Usar hora actual del servidor
                         );
                     }
                 }
