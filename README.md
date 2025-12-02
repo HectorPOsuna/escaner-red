@@ -1,211 +1,138 @@
-# Monitor de Actividad de Protocolos de Red
+# Escáner de Red y Monitor de Conflictos
 
-## Descripción General
+Sistema integral de monitoreo de red que combina un potente agente de escaneo en PowerShell con un backend en Node.js para detectar dispositivos, identificar fabricantes y alertar sobre conflictos de IP/MAC en tiempo real.
 
-El **Monitor de Actividad de Protocolos de Red** es un sistema integral diseñado para la supervisión en tiempo real del tráfico y los dispositivos dentro de una red local. Su objetivo principal es identificar conflictos de direcciones IP/MAC, detectar protocolos activos y proporcionar una visión clara de la seguridad y el estado de la red.
+## 🚀 Características Principales
 
-Este proyecto resuelve la necesidad de administradores de red de tener un control centralizado y visual sobre qué equipos están conectados y qué protocolos están utilizando, permitiendo una respuesta rápida ante anomalías o configuraciones inseguras.
+*   **Escaneo Inteligente**: Agente PowerShell optimizado con ejecución en paralelo y caché de puertos (TTL 10 min) para reducir el tráfico de red.
+*   **Detección Híbrida**: Identificación de Sistema Operativo mediante WMI (Windows Domain) y análisis de TTL (Time-To-Live).
+*   **Validación de Conflictos**: El backend detecta automáticamente:
+    *   **IP Duplicada**: Misma IP en diferentes Hostnames/MACs.
+    *   **MAC Duplicada**: Misma MAC en diferentes Hostnames.
+*   **Base de Datos de Fabricantes**: Identificación automática de fabricantes usando una base de datos local con más de **38,000 registros OUI** oficiales del IEEE.
+*   **Historial de Protocolos**: Registro detallado de puertos y servicios abiertos por dispositivo.
 
-## Características Principales (Features)
-
-*   **Identificación de Dispositivos**: Captura detallada de hostname, dirección IP, dirección MAC, sistema operativo y fabricante del hardware.
-*   **Análisis de Protocolos**: Detección y clasificación de los protocolos de red utilizados por cada equipo.
-*   **Validación de Seguridad**: Verificación de conflictos IP/MAC contra hostname para detectar suplantaciones o errores de configuración.
-*   **Persistencia de Datos**: Registro histórico de actividades y dispositivos en base de datos MySQL.
-*   **API REST**: Backend robusto para la gestión de datos y comunicación entre componentes.
-*   **Servicio de Windows**: Ejecución en segundo plano con inicio automático al arrancar el sistema.
-*   **Agente de Captura**: Módulo ligero conectado al servicio para la recolección de paquetes.
-*   **Dashboard Web**: Interfaz de usuario responsiva y moderna para la visualización de datos.
-*   **Visualización Intuitiva**: Clasificación de protocolos por colores para una rápida identificación.
-*   **Sistema de Reportes**: Generación de gráficos estadísticos sobre el uso de la red.
-*   **Exportación de Datos**: Capacidad de exportar reportes en formatos PDF y CSV.
-
-## Arquitectura del Sistema
-
-El sistema sigue una arquitectura distribuida donde los agentes recolectan información y la envían a un servidor central para su procesamiento y visualización.
+## 🏗️ Arquitectura
 
 ```mermaid
 graph TD
-    A[Agente de Captura] -->|Datos de Red| B(Servicio Windows)
-    B -->|JSON| C{API Backend}
-    C -->|Persistencia| D[(MySQL)]
-    E[Frontend Web] -->|HTTP Requests| C
-    C -->|Datos JSON| E
+    subgraph "Agente (Cliente)"
+        A[NetworkScanner.ps1] -->|ICMP/TCP| B(Red Local)
+        A -->|Cache Local| C[port_scan_cache.json]
+    end
+
+    subgraph "Servidor (Backend)"
+        A -->|HTTP POST JSON| D{API Node.js}
+        D -->|Validación| E(Lógica de Conflictos)
+        E -->|Persistencia| F[(MySQL Database)]
+    end
+
+    subgraph "Base de Datos"
+        F --> G[Tabla: equipos]
+        F --> H[Tabla: conflictos]
+        F --> I[Tabla: fabricantes]
+        F --> J[Tabla: protocolos]
+    end
 ```
 
-*Representación simplificada:*
-`Agente de Captura` → `Servicio Windows` → `API Backend` → `MySQL`
-                                             ↓
-                                         `Frontend Web`
+## 🛠️ Requisitos del Sistema
 
-## Tecnologías Utilizadas
+*   **Agente**: Windows con PowerShell 5.1 o superior (Recomendado PowerShell 7+).
+*   **Backend**: Node.js v14+.
+*   **Base de Datos**: MySQL 8.0+.
 
-*   **Servicio y Agente**: C# (.NET)
-*   **Backend API**: Node.js / Python / C# (Configurable según implementación)
-*   **Base de Datos**: MySQL
-*   **Frontend**: HTML5, CSS3, JavaScript (React o Vanilla JS)
-*   **Visualización**: Chart.js
-*   **Contenedores** (Opcional): Docker
+## 📦 Guía de Instalación y Despliegue
 
-## Instalación
+Sigue estos pasos para desplegar el sistema completo en un nuevo entorno.
 
-### Prerrequisitos
-*   .NET SDK (versión compatible con el servicio)
-*   Node.js y npm (si se usa Node para backend/frontend)
-*   MySQL Server
-*   Git
+### 1. Configuración de Base de Datos
 
-### 1. Base de Datos
-1.  Instale MySQL Server.
-2.  Ejecute el script de inicialización ubicado en `/db/schema.sql` para crear la base de datos y las tablas.
-    ```sql
-    CREATE DATABASE network_monitor;
-    USE network_monitor;
-    -- (Tablas definidas en schema.sql)
-    ```
-
-### 2. Backend API
-1.  Navegue al directorio `/backend`.
-2.  Instale las dependencias:
+1.  Asegúrate de tener MySQL corriendo y crea una base de datos (ej. `escaner_red`).
+2.  Navega al directorio `database`:
     ```bash
+    cd database
     npm install
     ```
-3.  Configure las variables de entorno en un archivo `.env` (DB_HOST, DB_USER, etc.).
-4.  Inicie el servidor:
+3.  Crea un archivo `.env` en la raíz del proyecto con tus credenciales (ver `.env.example`).
+4.  Inicializa las tablas:
     ```bash
+    npm run init-db
+    ```
+5.  (Opcional) Poblar la base de datos de fabricantes (descarga ~4MB de datos IEEE):
+    ```bash
+    npm run seed-oui
+    ```
+
+### 2. Configuración del Backend (Servidor)
+
+1.  Navega al directorio `server`:
+    ```bash
+    cd server
+    npm install
+    ```
+2.  Inicia el servidor:
+    ```bash
+    # Modo producción
     npm start
-    ```
-
-### 3. Servicio Windows y Agente
-1.  Abra la solución en Visual Studio o use CLI en `/windows_service`.
-2.  Compile el proyecto:
-    ```bash
-    dotnet build --configuration Release
-    ```
-3.  Instale el servicio (requiere permisos de administrador):
-    ```bash
-    sc create "NetworkMonitorService" binPath= "RUTA_ABSOLUTA\NetworkMonitorService.exe"
-    ```
-4.  Inicie el servicio:
-    ```bash
-    sc start "NetworkMonitorService"
-    ```
-
-### 4. Frontend Web
-1.  Navegue al directorio `/frontend`.
-2.  Instale dependencias (si aplica):
-    ```bash
-    npm install
-    ```
-3.  Inicie el servidor de desarrollo:
-    ```bash
+    
+    # Modo desarrollo
     npm run dev
     ```
+    *El servidor escuchará por defecto en el puerto 3000.*
 
-## Uso del Proyecto
+### 3. Ejecución del Agente (Escáner)
 
-1.  **Iniciar Infraestructura**: Asegúrese de que MySQL y el Backend API estén corriendo.
-2.  **Activar Agentes**: Inicie el Servicio de Windows en los equipos que desea monitorear.
-3.  **Acceder al Dashboard**: Abra su navegador y vaya a `http://localhost:3000` (o el puerto configurado).
-4.  **Monitoreo**:
-    *   En el **Dashboard** verá los equipos conectados en tiempo real.
-    *   Navegue a **Reportes** para ver gráficos de protocolos.
-    *   Use **Exportar** para descargar logs de actividad.
-
-## Endpoints del Backend (API Reference)
-
-### Capturas
-Registra una nueva captura de tráfico o actividad.
-*   **URL**: `/capturas`
-*   **Método**: `POST`
-*   **Body**:
-    ```json
-    {
-      "hostname": "PC-Gerencia",
-      "ip": "192.168.1.15",
-      "mac": "AA:BB:CC:DD:EE:FF",
-      "protocol": "TCP",
-      "timestamp": "2023-10-27T10:00:00Z"
-    }
+1.  Abre el script `agent/NetworkScanner.ps1`.
+2.  Verifica la configuración en la sección superior:
+    ```powershell
+    $SubnetPrefix = "192.168.1."       # Tu subred
+    $ApiUrl = "http://localhost:3000/api/scan-results" # URL del backend
+    ```
+3.  Ejecuta el script:
+    ```powershell
+    .\NetworkScanner.ps1
     ```
 
-### Equipos
-Obtiene la lista de todos los equipos detectados.
-*   **URL**: `/equipos`
-*   **Método**: `GET`
-*   **Respuesta**:
-    ```json
-    [
-      {
-        "id": 1,
-        "hostname": "PC-01",
-        "ip": "192.168.1.10",
-        "os": "Windows 10"
-      }
-    ]
-    ```
+## ⚙️ Configuración
 
-### Protocolos Seguros
-Lista protocolos considerados seguros (ej. HTTPS, SSH).
-*   **URL**: `/protocolos/seguros`
-*   **Método**: `GET`
+### Variables de Entorno (.env)
+Ubicado en la raíz del proyecto:
 
-### Protocolos Inseguros
-Lista protocolos vulnerables o no cifrados (ej. HTTP, Telnet).
-*   **URL**: `/protocolos/inseguros`
-*   **Método**: `GET`
-
-### Reportes
-Obtiene estadísticas para los gráficos.
-*   **URL**: `/reportes`
-*   **Método**: `GET`
-*   **Respuesta**:
-    ```json
-    {
-      "total_traffic": 1024,
-      "protocols_breakdown": { "TCP": 80, "UDP": 20 }
-    }
-    ```
-
-## Estructura del Repositorio
-
-Se recomienda la siguiente organización de carpetas:
-
-```
-/
-├── backend/          # Código fuente de la API REST
-├── frontend/         # Código fuente de la interfaz web
-├── agent/            # Código del agente de captura
-├── windows_service/  # Código del servicio de Windows
-├── db/               # Scripts SQL y migraciones
-├── docs/             # Documentación adicional y diagramas
-└── tests/            # Tests unitarios y de integración
+```env
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=usuario
+DB_PASSWORD=contraseña
+DB_NAME=escaner_red
+PORT=3000 # Puerto del servidor backend
 ```
 
-## Roadmap
+### Configuración del Agente (PowerShell)
+Variables modificables en `NetworkScanner.ps1`:
 
-- [ ] **Fase 1**: Prototipo funcional (Captura básica y Dashboard).
-- [ ] **Fase 2**: Implementación de alertas en tiempo real (WebSockets).
-- [ ] **Fase 3**: Soporte para múltiples subredes.
-- [ ] **Fase 4**: Autenticación de usuarios y roles en el Dashboard.
-- [ ] **Fase 5**: Integración con herramientas SIEM.
+*   `$SubnetPrefix`: Prefijo de la red a escanear (ej. "10.0.0.").
+*   `$PingCount`: Número de pings por host.
+*   `$PortScanEnabled`: `$true` para escanear puertos.
+*   `$PortCacheTTLMinutes`: Tiempo de vida del caché de puertos (default: 10).
+*   `$EnableApiExport`: `$true` para enviar datos al backend.
 
-## Contribución
+## 🚨 Solución de Problemas常见
 
-¡Las contribuciones son bienvenidas! Por favor siga estos pasos:
+*   **Error de ejecución de scripts en PowerShell**:
+    Ejecuta `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` para permitir scripts locales.
+*   **Error de conexión a MySQL**:
+    Verifica que el usuario tenga permisos y que el archivo `.env` esté en la raíz del proyecto.
+*   **El escáner es lento**:
+    Asegúrate de usar PowerShell 7+ para aprovechar el paralelismo (`ForEach-Object -Parallel`).
 
-1.  Haga un Fork del repositorio.
-2.  Cree una rama para su feature (`git checkout -b feature/NuevaCaracteristica`).
-3.  Haga commit de sus cambios (`git commit -m 'Agrega nueva característica'`).
-4.  Haga push a la rama (`git push origin feature/NuevaCaracteristica`).
-5.  Abra un Pull Request.
+## 🤝 Contribución
 
-## Autores
+1.  Fork del repositorio.
+2.  Crea tu rama (`git checkout -b feature/AmazingFeature`).
+3.  Commit de tus cambios (`git commit -m 'Add some AmazingFeature'`).
+4.  Push a la rama (`git push origin feature/AmazingFeature`).
+5.  Abre un Pull Request.
 
-*   **Hector Manuel Padilla Osuna** - *Trabajo Inicial* - [HectorPOsuna](https://github.com/HectorPOsuna)
-*   **[Otro Desarrollador]** - *Backend*
-*   *(Esta sección está abierta para agregar nuevos colaboradores)*
+## 📄 Licencia
 
-## Licencia
-
-Este proyecto está bajo la Licencia MIT - vea el archivo [LICENSE](LICENSE) para más detalles.
+Distribuido bajo la licencia MIT. Ver `LICENSE` para más información.
