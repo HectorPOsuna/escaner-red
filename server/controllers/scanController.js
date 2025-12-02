@@ -78,10 +78,23 @@ async function processScanResults(req, res) {
             
             // a) Fabricante
             let fabricanteId = null;
-            if (host.manufacturer && host.manufacturer !== 'Desconocido') {
-                // Usar OUI de la MAC si está disponible, sino un dummy
-                const oui = host.mac ? host.mac.replace(/[:-]/g, '').substring(0, 6).toUpperCase() : '000000';
-                fabricanteId = await dbService.createFabricante(host.manufacturer, oui);
+            let oui = null;
+
+            if (host.mac) {
+                // Normalizar OUI: XX:XX:XX... -> XXXXXX (primeros 6 chars)
+                oui = host.mac.replace(/[:-]/g, '').substring(0, 6).toUpperCase();
+                
+                // 1. Intentar buscar por OUI en la base de datos (prioridad)
+                const fabricanteDb = await dbService.getFabricanteByOui(oui);
+                
+                if (fabricanteDb) {
+                    fabricanteId = fabricanteDb.id_fabricante;
+                }
+            }
+
+            // 2. Si no se encontró por OUI, pero el agente envió un nombre válido, crearlo/buscarlo por nombre
+            if (!fabricanteId && host.manufacturer && host.manufacturer !== 'Desconocido') {
+                fabricanteId = await dbService.createFabricante(host.manufacturer, oui || '000000');
             }
 
             // b) Equipo

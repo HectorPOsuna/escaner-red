@@ -21,6 +21,16 @@ class DbService {
         }
     }
 
+    async getFabricanteByOui(oui) {
+        const conn = await this.getConnection();
+        try {
+            const [rows] = await conn.execute('SELECT * FROM fabricantes WHERE oui_mac = ?', [oui]);
+            return rows[0];
+        } finally {
+            await conn.end();
+        }
+    }
+
     async createFabricante(nombre, oui = '000000') {
         const conn = await this.getConnection();
         try {
