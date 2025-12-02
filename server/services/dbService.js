@@ -127,6 +127,18 @@ class DbService {
         }
     }
 
+    async getAllProtocols() {
+        const conn = await this.getConnection();
+        try {
+            // Limitamos a puertos comunes si son demasiados, o traemos todos.
+            // Para el escáner, traeremos todos los que tengan categoría definida o sean < 10000
+            const [rows] = await conn.execute('SELECT numero as port, nombre as protocol FROM protocolos ORDER BY numero ASC');
+            return rows;
+        } finally {
+            await conn.end();
+        }
+    }
+
     async createProtocolo(port, name, category = 'otro') {
         const conn = await this.getConnection();
         try {

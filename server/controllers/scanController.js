@@ -152,4 +152,14 @@ async function processScanResults(req, res) {
     });
 }
 
-module.exports = { processScanResults };
+async function getProtocols(req, res) {
+    try {
+        const protocols = await dbService.getAllProtocols();
+        res.json(protocols);
+    } catch (error) {
+        console.error('❌ Error obteniendo protocolos:', error.message);
+        res.status(500).json({ error: 'Error retrieving protocols' });
+    }
+}
+
+module.exports = { processScanResults, getProtocols };

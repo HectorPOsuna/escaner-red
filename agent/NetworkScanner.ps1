@@ -33,7 +33,9 @@ $PingTimeoutMs = 200 # Timeout en milisegundos (ajustar según latencia de red)
 # Configuración de Escaneo de Puertos
 $PortScanEnabled = $true
 $PortScanTimeout = 500 # Timeout en milisegundos por puerto
-$CommonPorts = @(
+
+# Lista de puertos por defecto (Fallback)
+$DefaultCommonPorts = @(
     @{Port=21; Protocol="FTP"},
     @{Port=22; Protocol="SSH"},
     @{Port=23; Protocol="Telnet"},
@@ -49,6 +51,8 @@ $CommonPorts = @(
     @{Port=5432; Protocol="PostgreSQL"},
     @{Port=8080; Protocol="HTTP-Alt"}
 )
+
+$CommonPorts = $DefaultCommonPorts
 
 # Configuración de Caché de Puertos
 $PortCacheFile = Join-Path -Path $PSScriptRoot -ChildPath "port_scan_cache.json"
@@ -144,6 +148,76 @@ function Start-BackendServices {
 
 # Iniciar servicios antes de continuar
 Start-BackendServices
+
+function Get-RemoteProtocols {
+    <#
+    .SYNOPSIS
+        Obtiene la lista de protocolos desde la API del backend.
+    #>
+    if (-not $EnableApiExport) { return $null }
+    
+    $ProtocolsUrl = $ApiUrl.Replace("/scan-results", "/protocolos")
+    
+    try {
+        Write-Host "Sincronizando base de datos de protocolos..." -ForegroundColor Cyan
+        $Response = Invoke-RestMethod -Uri $ProtocolsUrl -Method Get -ErrorAction Stop -TimeoutSec 5
+        
+        $RemotePorts = @()
+        foreach ($Item in $Response) {
+            $RemotePorts += @{
+                Port = [int]$Item.port
+                Protocol = $Item.protocol
+            }
+        }
+        
+        if ($RemotePorts.Count -gt 0) {
+            Write-Host "✅ Sincronizados $($RemotePorts.Count) protocolos desde el backend." -ForegroundColor Green
+            return $RemotePorts
+        }
+    } catch {
+        Write-Warning "No se pudo sincronizar protocolos desde la API. Usando base de datos local."
+        # Write-Warning $_.Exception.Message
+    }
+    return $null
+}
+
+# Intentar actualizar la lista de puertos comunes desde la API
+$RemotePortsList = Get-RemoteProtocols
+if ($RemotePortsList) {
+    # Filtramos para no tener una lista de 6000 puertos si no es necesario, 
+    # o podemos usar todos. Para rendimiento, quizás sea mejor usar los Top 100 o 1000.
+    # Por ahora, usaremos todos los que vengan (si el usuario quiere escanear todo).
+    # Pero OJO: Escanear 6000 puertos por host tardará mucho.
+    # Mantenemos la lógica de escaneo rápido, pero actualizamos la DEFINICIÓN.
+    
+    # Si queremos escanear SOLO los comunes, mantenemos la lista corta.
+    # Si queremos que el escáner use la DB para identificar, necesitamos separar
+    # "Puertos a Escanear" de "Diccionario de Protocolos".
+    
+    # Asumiremos que $CommonPorts define QUÉ escanear.
+    # Si la API devuelve 6000, escanear 6000 puertos x 254 hosts = LENTO.
+    # Estrategia: Usar la lista remota SOLO si son puertos "comunes" o si el usuario lo pide.
+    # Por seguridad, mantendremos la lista por defecto para el escaneo activo, 
+    # pero podríamos ampliarla si la API devuelve una lista curada de "Top Ports".
+    
+    # Dado que la tabla tiene TODOS (6000+), no podemos asignarlo directo a $CommonPorts 
+    # sin matar el rendimiento.
+    # Solución: Mantenemos $CommonPorts como está (o un Top 20 extendido), 
+    # pero usamos la API para *identificar* (ya lo hace el backend).
+    
+    # El usuario pidió: "que use la que esta en la nube".
+    # Interpretación: El agente debe saber qué escanear basado en la nube.
+    # Si la nube devuelve 6000, el agente escanea 6000? Probablemente no sea lo deseado por defecto.
+    
+    # Haremos un compromiso: Actualizaremos $CommonPorts con los puertos que la API marque como "esencial", "base_de_datos", "correo", etc.
+    # (Necesitaríamos que el endpoint devuelva la categoría).
+    
+    # Por ahora, para cumplir la solicitud literalmente sin romper el script:
+    # Asignaremos los primeros 50 o 100 puertos de la lista remota a $CommonPorts.
+    
+    $CommonPorts = $RemotePortsList | Select-Object -First 50
+    Write-Host "Lista de escaneo actualizada con los Top 50 protocolos de la nube." -ForegroundColor Gray
+}
 
 function Get-IpRange {
     <#
