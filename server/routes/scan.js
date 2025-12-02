@@ -5,4 +5,7 @@ const scanController = require('../controllers/scanController');
 // POST /api/scan-results
 router.post('/scan-results', scanController.processScanResults);
 
+// POST /api/capturas (Alias solicitado)
+router.post('/capturas', scanController.processScanResults);
+
 module.exports = router;

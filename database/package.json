@@ -5,7 +5,8 @@
   "main": "dbConnection.js",
   "scripts": {
     "init-db": "node initDB.js",
-    "seed-oui": "node seed_oui.js",
+    "seed-oui": "node seed/seed_oui.js",
+    "seed-protocolos": "node seed/seed_protocolos.js",
     "test-connection": "node -e \"require('./dbConnection').testConnection()\""
   },
   "keywords": [
