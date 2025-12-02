@@ -20,12 +20,10 @@ async function initializeDatabase() {
         
         console.log('\n2️⃣ Ejecutando archivos SQL...\n');
         
-        // 2. Ejecutar archivo de creación de tabla conflictos
-        const sqlFilePath = path.join(__dirname, 'create_conflictos_table.sql');
-        await executeSQLFile(sqlFilePath);
-        
-        // Alternativa: Ejecutar todos los archivos SQL del directorio
-        // await executeSQLDirectory(__dirname);
+        // 2. Ejecutar migración inicial (Esquema completo)
+        const migrationPath = path.join(__dirname, 'migrations', '007_initial_schema.sql');
+        console.log(`📄 Ejecutando migración: ${path.basename(migrationPath)}`);
+        await executeSQLFile(migrationPath);
         
         console.log('\n✅ Base de datos inicializada correctamente');
         
