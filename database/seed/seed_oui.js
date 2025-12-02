@@ -1,4 +1,4 @@
-const { createConnection } = require('./dbConnection');
+const { createConnection } = require('../dbConnection');
 const fs = require('fs');
 const path = require('path');
 
