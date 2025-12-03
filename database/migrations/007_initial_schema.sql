@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS logs;
 DROP TABLE IF EXISTS protocolos_usados;
 DROP TABLE IF EXISTS conflictos;
 DROP TABLE IF EXISTS equipos;
+DROP TABLE IF EXISTS sistemas_operativos;
 DROP TABLE IF EXISTS protocolos;
 DROP TABLE IF EXISTS fabricantes;
 
@@ -44,7 +45,18 @@ CREATE TABLE IF NOT EXISTS protocolos (
 COMMENT='Catálogo de protocolos y puertos estándar';
 
 -- ==============================================================================
--- 3. Tabla: equipos
+-- 3. Tabla: sistemas_operativos
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS sistemas_operativos (
+    id_so INT AUTO_INCREMENT PRIMARY KEY COMMENT 'ID único del sistema operativo',
+    nombre VARCHAR(100) NOT NULL UNIQUE COMMENT 'Nombre del Sistema Operativo',
+    CONSTRAINT uk_so_nombre UNIQUE (nombre),
+    INDEX idx_so_nombre (nombre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Catálogo de sistemas operativos detectados';
+
+-- ==============================================================================
+-- 4. Tabla: equipos
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS equipos (
     id_equipo INT AUTO_INCREMENT PRIMARY KEY COMMENT 'ID único del dispositivo',
@@ -52,9 +64,10 @@ CREATE TABLE IF NOT EXISTS equipos (
     ip VARCHAR(45) NOT NULL COMMENT 'Dirección IP del dispositivo',
     mac VARCHAR(17) NULL COMMENT 'Dirección MAC en formato XX:XX:XX:XX:XX:XX',
     fabricante_id INT NOT NULL COMMENT 'ID del fabricante (FK) - Obligatorio',
-    sistema_operativo VARCHAR(100) NULL COMMENT 'Sistema Operativo o tipo de dispositivo detectado',
+    id_so INT NULL COMMENT 'ID del Sistema Operativo (FK)',
     ultima_deteccion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Timestamp de la última vez que fue visto',
     CONSTRAINT fk_equipos_fabricante FOREIGN KEY (fabricante_id) REFERENCES fabricantes(id_fabricante) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT fk_equipos_so FOREIGN KEY (id_so) REFERENCES sistemas_operativos(id_so) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT uk_equipos_ip UNIQUE (ip),
     CONSTRAINT uk_equipos_mac UNIQUE (mac),
     CONSTRAINT chk_equipos_ip_length CHECK (CHAR_LENGTH(ip) >= 7 AND CHAR_LENGTH(ip) <= 45),
@@ -62,7 +75,7 @@ CREATE TABLE IF NOT EXISTS equipos (
     INDEX idx_equipos_ip (ip),
     INDEX idx_equipos_mac (mac),
     INDEX idx_equipos_fabricante (fabricante_id),
-    INDEX idx_equipos_os (sistema_operativo),
+    INDEX idx_equipos_so (id_so),
     INDEX idx_equipos_hostname (hostname)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Inventario de equipos detectados en la red';

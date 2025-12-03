@@ -56,7 +56,7 @@ class DbService {
                     e.hostname,
                     e.ip,
                     e.mac,
-                    e.sistema_operativo as os,
+                    so.nombre as os,
                     f.nombre as fabricante,
                     e.ultima_deteccion,
                     (
@@ -69,6 +69,7 @@ class DbService {
                     ) as ultimo_protocolo
                 FROM equipos e
                 LEFT JOIN fabricantes f ON e.fabricante_id = f.id_fabricante
+                LEFT JOIN sistemas_operativos so ON e.id_so = so.id_so
                 ORDER BY e.ultima_deteccion DESC
             `;
             const [rows] = await conn.execute(query);
@@ -108,10 +109,49 @@ class DbService {
         }
     }
 
+    async getOrCreateSistemaOperativo(nombre) {
+        if (!nombre) return null;
+        const conn = await this.getConnection();
+        try {
+            // 1. Buscar si existe
+            const [rows] = await conn.execute('SELECT id_so FROM sistemas_operativos WHERE nombre = ?', [nombre]);
+            if (rows.length > 0) return rows[0].id_so;
+
+            // 2. Si no existe, crear
+            const [result] = await conn.execute('INSERT INTO sistemas_operativos (nombre) VALUES (?)', [nombre]);
+            return result.insertId;
+        } finally {
+            await conn.end();
+        }
+    }
+
     async upsertEquipo(equipoData) {
         const conn = await this.getConnection();
         try {
-            // Intentar buscar por MAC primero
+            // a) Fabricante
+            let fabricanteId = null;
+            if (equipoData.mac) {
+                const oui = equipoData.mac.substring(0, 8).replace(/:/g, '').toUpperCase(); // XX:XX:XX -> XXXXXX
+                const fabricante = await this.getFabricanteByOui(oui);
+                if (fabricante) {
+                    fabricanteId = fabricante.id_fabricante;
+                }
+            }
+            
+            // Si no se encontró por MAC, intentar buscar o crear por nombre si viene en los datos
+            if (!fabricanteId && equipoData.vendor) {
+                fabricanteId = await this.createFabricante(equipoData.vendor, '000000'); // OUI dummy si es por nombre
+            }
+
+            // b) Sistema Operativo (Normalización)
+            const soId = await this.getOrCreateSistemaOperativo(equipoData.os);
+
+            // c) Equipo
+            // Asegurar que fabricante_id no sea nulo (Constraint NOT NULL)
+            // Usar ID 1 (Desconocido) si no se pudo determinar
+            const finalFabricanteId = fabricanteId || 1;
+
+            // Verificar si existe por MAC o IP
             let existing = null;
             if (equipoData.mac) {
                 [existing] = await conn.execute('SELECT * FROM equipos WHERE mac = ?', [equipoData.mac]);
@@ -126,22 +166,17 @@ class DbService {
                 // Actualizar
                 const id = existing[0].id_equipo;
                 await conn.execute(
-                    'UPDATE equipos SET hostname = ?, ip = ?, sistema_operativo = ?, fabricante_id = ?, ultima_deteccion = NOW() WHERE id_equipo = ?',
-                    [equipoData.hostname, equipoData.ip, equipoData.os, equipoData.fabricante_id, id]
+                    'UPDATE equipos SET hostname = ?, ip = ?, mac = ?, id_so = ?, fabricante_id = ?, ultima_deteccion = NOW() WHERE id_equipo = ?',
+                    [equipoData.hostname, equipoData.ip, equipoData.mac, soId, finalFabricanteId, id]
                 );
                 return id;
             } else {
                 // Insertar
-            // b) Equipo
-            // Asegurar que fabricante_id no sea nulo (Constraint NOT NULL)
-            // Usar ID 1 (Desconocido) si no se pudo determinar
-            const finalFabricanteId = equipoData.fabricante_id || 1;
-
-            const [result] = await conn.execute(
-                'INSERT INTO equipos (hostname, ip, mac, sistema_operativo, fabricante_id, ultima_deteccion) VALUES (?, ?, ?, ?, ?, NOW())',
-                [equipoData.hostname, equipoData.ip, equipoData.mac, equipoData.os, finalFabricanteId]
-            );
-            return result.insertId;
+                const [result] = await conn.execute(
+                    'INSERT INTO equipos (hostname, ip, mac, id_so, fabricante_id, ultima_deteccion) VALUES (?, ?, ?, ?, ?, NOW())',
+                    [equipoData.hostname, equipoData.ip, equipoData.mac, soId, finalFabricanteId]
+                );
+                return result.insertId;
             }
         } finally {
             await conn.end();
