@@ -47,6 +47,37 @@ class DbService {
     }
 
     // --- Equipos ---
+    async getAllEquipos() {
+        const conn = await this.getConnection();
+        try {
+            const query = `
+                SELECT 
+                    e.id_equipo,
+                    e.hostname,
+                    e.ip,
+                    e.mac,
+                    e.sistema_operativo as os,
+                    f.nombre as fabricante,
+                    e.ultima_deteccion,
+                    (
+                        SELECT p.nombre 
+                        FROM protocolos_usados pu 
+                        JOIN protocolos p ON pu.id_protocolo = p.id_protocolo 
+                        WHERE pu.id_equipo = e.id_equipo 
+                        ORDER BY pu.fecha_hora DESC 
+                        LIMIT 1
+                    ) as ultimo_protocolo
+                FROM equipos e
+                LEFT JOIN fabricantes f ON e.fabricante_id = f.id_fabricante
+                ORDER BY e.ultima_deteccion DESC
+            `;
+            const [rows] = await conn.execute(query);
+            return rows;
+        } finally {
+            await conn.end();
+        }
+    }
+
     async getEquipoByMac(mac) {
         const conn = await this.getConnection();
         try {

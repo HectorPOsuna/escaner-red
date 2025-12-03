@@ -162,4 +162,14 @@ async function getProtocols(req, res) {
     }
 }
 
-module.exports = { processScanResults, getProtocols };
+async function getEquipos(req, res) {
+    try {
+        const equipos = await dbService.getAllEquipos();
+        res.json(equipos);
+    } catch (error) {
+        console.error('❌ Error obteniendo equipos:', error.message);
+        res.status(500).json({ error: 'Error retrieving equipment list' });
+    }
+}
+
+module.exports = { processScanResults, getProtocols, getEquipos };

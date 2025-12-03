@@ -11,4 +11,7 @@ router.post('/capturas', scanController.processScanResults);
 // GET /api/protocolos
 router.get('/protocolos', scanController.getProtocols);
 
+// GET /api/equipos
+router.get('/equipos', scanController.getEquipos);
+
 module.exports = router;
