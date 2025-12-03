@@ -1,6 +1,9 @@
 const { executeSQLFile, executeSQLDirectory, testConnection } = require('./dbConnection');
 const path = require('path');
 
+const { seedProtocolos } = require('./seed/seed_protocolos');
+const { seedDatabase: seedOui } = require('./seed/seed_oui');
+
 /**
  * Script para inicializar la base de datos
  * Ejecuta todos los archivos SQL necesarios para crear las tablas
@@ -25,7 +28,16 @@ async function initializeDatabase() {
         console.log(`📄 Ejecutando migración: ${path.basename(migrationPath)}`);
         await executeSQLFile(migrationPath);
         
-        console.log('\n✅ Base de datos inicializada correctamente');
+        console.log('\n3️⃣ Ejecutando Seeds Automáticos...\n');
+        
+        // 3. Ejecutar Seeds
+        console.log('🌱 Sembrando Fabricantes (OUI)...');
+        await seedOui();
+        
+        console.log('\n🌱 Sembrando Protocolos (IANA)...');
+        await seedProtocolos();
+
+        console.log('\n✅ Base de datos inicializada y sembrada correctamente');
         
     } catch (error) {
         console.error('\n❌ Error al inicializar la base de datos:', error.message);
