@@ -64,8 +64,38 @@ async function processScanResults(req, res) {
                             hostname: host.hostname,
                             description: `Conflicto de MAC: El dispositivo ${host.mac} cambió de nombre de ${existingMac.hostname} a ${host.hostname}`
                         });
-                        // Nota: El usuario pidió registrar conflicto, pero esto también podría ser un rename legítimo.
-                        // Lo registramos como conflicto según requerimiento, pero permitimos la actualización del equipo abajo.
+                        conflictDetected = true;
+                        results.conflicts++;
+                    }
+                }
+            }
+
+            // C) Conflicto de Hostname: El hostname existe pero con otra IP o MAC
+            if (host.hostname && host.hostname !== 'Desconocido') {
+                const existingHostname = await dbService.getEquipoByHostname(host.hostname);
+                if (existingHostname) {
+                    // Verificar si la IP es diferente (y ambas existen)
+                    if (host.ip && existingHostname.ip && host.ip !== existingHostname.ip) {
+                        // Si la MAC es igual, es un cambio de IP legítimo (DHCP). Si es diferente o nula, es sospechoso.
+                        if (!host.mac || !existingHostname.mac || host.mac !== existingHostname.mac) {
+                            await dbService.registerConflict({
+                                ip: host.ip,
+                                mac: host.mac,
+                                hostname: host.hostname,
+                                description: `Conflicto de Hostname: El nombre ${host.hostname} está siendo usado por ${host.ip} (${host.mac || 'No MAC'}), pero pertenecía a ${existingHostname.ip} (${existingHostname.mac || 'No MAC'})`
+                            });
+                            conflictDetected = true;
+                            results.conflicts++;
+                        }
+                    }
+                    // Verificar si la MAC es diferente (Spoofing de nombre)
+                    else if (host.mac && existingHostname.mac && host.mac !== existingHostname.mac) {
+                        await dbService.registerConflict({
+                            ip: host.ip,
+                            mac: host.mac,
+                            hostname: host.hostname,
+                            description: `Conflicto de Identidad: El nombre ${host.hostname} apareció con una nueva MAC ${host.mac} (antes ${existingHostname.mac})`
+                        });
                         conflictDetected = true;
                         results.conflicts++;
                     }
@@ -172,4 +202,24 @@ async function getEquipos(req, res) {
     }
 }
 
-module.exports = { processScanResults, getProtocols, getEquipos };
+async function getProtocolosSeguros(req, res) {
+    try {
+        const protocolos = await dbService.getProtocolosByCategoria('seguro');
+        res.json(protocolos);
+    } catch (error) {
+        console.error('❌ Error obteniendo protocolos seguros:', error.message);
+        res.status(500).json({ error: 'Error retrieving secure protocols' });
+    }
+}
+
+async function getProtocolosInseguros(req, res) {
+    try {
+        const protocolos = await dbService.getProtocolosByCategoria('inseguro');
+        res.json(protocolos);
+    } catch (error) {
+        console.error('❌ Error obteniendo protocolos inseguros:', error.message);
+        res.status(500).json({ error: 'Error retrieving insecure protocols' });
+    }
+}
+
+module.exports = { processScanResults, getProtocols, getEquipos, getProtocolosSeguros, getProtocolosInseguros };

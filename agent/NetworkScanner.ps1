@@ -137,17 +137,38 @@ function Start-BackendServices {
             
             # Esperar un momento para que inicie
             Start-Sleep -Seconds 3
-            Write-Host "Servidor iniciado correctamente." -ForegroundColor Green
+            
+            # Verificar nuevamente si inició
+            try {
+                $TcpConnection = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+                if ($TcpConnection) {
+                    Write-Host "Servidor iniciado correctamente." -ForegroundColor Green
+                    return $true
+                }
+            } catch {}
+            
+            Write-Warning "El servidor parece no haber iniciado correctamente."
+            return $false
         } catch {
-            Write-Warning "No se pudo iniciar el servidor backend automáticamente. Asegúrate de tener Node.js instalado."
+            Write-Warning "No se pudo iniciar el servidor backend automáticamente. Modo Offline activado."
+            return $false
         }
     } else {
         # Write-Host "Servidor backend ya está corriendo." -ForegroundColor DarkGray
+        return $true
     }
 }
 
-# Iniciar servicios antes de continuar
-Start-BackendServices
+# Iniciar servicios y determinar modo
+$BackendOnline = Start-BackendServices
+
+if (-not $BackendOnline) {
+    Write-Host "⚠️  MODO OFFLINE ACTIVADO: No hay conexión con el backend." -ForegroundColor Yellow
+    Write-Host "    Los resultados se guardarán solo localmente en archivos de texto." -ForegroundColor Gray
+    $EnableApiExport = $false
+} else {
+    $EnableApiExport = $true
+}
 
 function Get-RemoteProtocols {
     <#

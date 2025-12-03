@@ -98,6 +98,16 @@ class DbService {
         }
     }
 
+    async getEquipoByHostname(hostname) {
+        const conn = await this.getConnection();
+        try {
+            const [rows] = await conn.execute('SELECT * FROM equipos WHERE hostname = ?', [hostname]);
+            return rows[0];
+        } finally {
+            await conn.end();
+        }
+    }
+
     async upsertEquipo(equipoData) {
         const conn = await this.getConnection();
         try {
@@ -164,6 +174,19 @@ class DbService {
             // Limitamos a puertos comunes si son demasiados, o traemos todos.
             // Para el escáner, traeremos todos los que tengan categoría definida o sean < 10000
             const [rows] = await conn.execute('SELECT numero as port, nombre as protocol FROM protocolos ORDER BY numero ASC');
+            return rows;
+        } finally {
+            await conn.end();
+        }
+    }
+
+    async getProtocolosByCategoria(categoria) {
+        const conn = await this.getConnection();
+        try {
+            const [rows] = await conn.execute(
+                'SELECT numero as port, nombre as protocol, descripcion FROM protocolos WHERE categoria = ? ORDER BY numero ASC', 
+                [categoria]
+            );
             return rows;
         } finally {
             await conn.end();

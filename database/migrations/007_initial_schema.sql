@@ -13,11 +13,10 @@ CREATE TABLE IF NOT EXISTS fabricantes (
     id_fabricante INT AUTO_INCREMENT PRIMARY KEY COMMENT 'ID único del fabricante',
     nombre VARCHAR(100) NOT NULL COMMENT 'Nombre completo del fabricante',
     oui_mac VARCHAR(20) NOT NULL UNIQUE COMMENT 'OUI de la MAC (ej: 00:00:0C o 00000C)',
-    CONSTRAINT uk_oui_mac UNIQUE (oui_mac)
+    CONSTRAINT uk_oui_mac UNIQUE (oui_mac),
+    INDEX idx_nombre (nombre)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Catálogo de fabricantes identificados por OUI de direcciones MAC';
-
-CREATE INDEX idx_nombre ON fabricantes(nombre);
 
 -- ==============================================================================
 -- 2. Tabla: protocolos
@@ -29,13 +28,12 @@ CREATE TABLE IF NOT EXISTS protocolos (
     categoria ENUM('seguro', 'inseguro', 'esencial', 'base_de_datos', 'correo', 'otro') 
         DEFAULT 'otro' NOT NULL COMMENT 'Clasificación de seguridad o tipo de servicio',
     descripcion TEXT NULL COMMENT 'Descripción detallada del protocolo',
-    CONSTRAINT uk_protocolo_numero UNIQUE (numero)
+    CONSTRAINT uk_protocolo_numero UNIQUE (numero),
+    INDEX idx_protocolos_numero (numero),
+    INDEX idx_protocolos_nombre (nombre),
+    INDEX idx_protocolos_categoria (categoria)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Catálogo de protocolos y puertos estándar';
-
-CREATE INDEX idx_protocolos_numero ON protocolos(numero);
-CREATE INDEX idx_protocolos_nombre ON protocolos(nombre);
-CREATE INDEX idx_protocolos_categoria ON protocolos(categoria);
 
 -- ==============================================================================
 -- 3. Tabla: equipos
@@ -50,15 +48,14 @@ CREATE TABLE IF NOT EXISTS equipos (
     ultima_deteccion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Timestamp de la última vez que fue visto',
     CONSTRAINT fk_equipos_fabricante FOREIGN KEY (fabricante_id) REFERENCES fabricantes(id_fabricante) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT chk_equipos_ip_length CHECK (CHAR_LENGTH(ip) >= 7 AND CHAR_LENGTH(ip) <= 45),
-    CONSTRAINT chk_equipos_mac_length CHECK (mac IS NULL OR CHAR_LENGTH(mac) = 17)
+    CONSTRAINT chk_equipos_mac_length CHECK (mac IS NULL OR CHAR_LENGTH(mac) = 17),
+    INDEX idx_equipos_ip (ip),
+    INDEX idx_equipos_mac (mac),
+    INDEX idx_equipos_fabricante (fabricante_id),
+    INDEX idx_equipos_os (sistema_operativo),
+    INDEX idx_equipos_hostname (hostname)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Inventario de equipos detectados en la red';
-
-CREATE INDEX idx_equipos_ip ON equipos(ip);
-CREATE INDEX idx_equipos_mac ON equipos(mac);
-CREATE INDEX idx_equipos_fabricante ON equipos(fabricante_id);
-CREATE INDEX idx_equipos_os ON equipos(sistema_operativo);
-CREATE INDEX idx_equipos_hostname ON equipos(hostname);
 
 -- ==============================================================================
 -- 4. Tabla: conflictos
@@ -73,15 +70,14 @@ CREATE TABLE IF NOT EXISTS conflictos (
     estado ENUM('activo', 'resuelto') DEFAULT 'activo' COMMENT 'Estado del conflicto',
     CONSTRAINT chk_ip_or_mac CHECK (ip IS NOT NULL OR mac IS NOT NULL),
     CONSTRAINT chk_ip_length CHECK (ip IS NULL OR (CHAR_LENGTH(ip) >= 7 AND CHAR_LENGTH(ip) <= 45)),
-    CONSTRAINT chk_mac_length CHECK (mac IS NULL OR CHAR_LENGTH(mac) = 17)
+    CONSTRAINT chk_mac_length CHECK (mac IS NULL OR CHAR_LENGTH(mac) = 17),
+    INDEX idx_ip (ip),
+    INDEX idx_mac (mac),
+    INDEX idx_ip_mac (ip, mac),
+    INDEX idx_estado (estado),
+    INDEX idx_fecha_detectado (fecha_detectado)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Registro histórico de conflictos de red detectados';
-
-CREATE INDEX idx_ip ON conflictos(ip);
-CREATE INDEX idx_mac ON conflictos(mac);
-CREATE INDEX idx_ip_mac ON conflictos(ip, mac);
-CREATE INDEX idx_estado ON conflictos(estado);
-CREATE INDEX idx_fecha_detectado ON conflictos(fecha_detectado);
 
 -- ==============================================================================
 -- 5. Tabla: protocolos_usados
@@ -94,18 +90,32 @@ CREATE TABLE IF NOT EXISTS protocolos_usados (
     estado ENUM('activo', 'inactivo') DEFAULT 'activo' NOT NULL COMMENT 'Estado del servicio detectado',
     puerto_detectado INT NOT NULL COMMENT 'Puerto real donde se detectó el servicio',
     CONSTRAINT fk_uso_equipo FOREIGN KEY (id_equipo) REFERENCES equipos(id_equipo) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT fk_uso_protocolo FOREIGN KEY (id_protocolo) REFERENCES protocolos(id_protocolo) ON DELETE CASCADE ON UPDATE CASCADE
+    CONSTRAINT fk_uso_protocolo FOREIGN KEY (id_protocolo) REFERENCES protocolos(id_protocolo) ON DELETE CASCADE ON UPDATE CASCADE,
+    INDEX idx_uso_equipo (id_equipo),
+    INDEX idx_uso_protocolo (id_protocolo),
+    INDEX idx_uso_equipo_protocolo (id_equipo, id_protocolo),
+    INDEX idx_uso_fecha (fecha_hora),
+    INDEX idx_uso_estado (estado)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Registro histórico de protocolos detectados en equipos';
 
-CREATE INDEX idx_uso_equipo ON protocolos_usados(id_equipo);
-CREATE INDEX idx_uso_protocolo ON protocolos_usados(id_protocolo);
-CREATE INDEX idx_uso_equipo_protocolo ON protocolos_usados(id_equipo, id_protocolo);
-CREATE INDEX idx_uso_fecha ON protocolos_usados(fecha_hora);
-CREATE INDEX idx_uso_estado ON protocolos_usados(estado);
+-- ==============================================================================
+-- 6. Tabla: logs
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS logs (
+    id_log INT AUTO_INCREMENT PRIMARY KEY,
+    id_equipo INT NULL,
+    mensaje TEXT NOT NULL,
+    nivel ENUM('info', 'warning', 'error') DEFAULT 'info',
+    fecha_hora DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_equipo) REFERENCES equipos(id_equipo) ON DELETE SET NULL,
+    INDEX idx_logs_equipo (id_equipo),
+    INDEX idx_logs_nivel (nivel),
+    INDEX idx_logs_fecha (fecha_hora)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ==============================================================================
--- 6. Datos Iniciales (Seed Data)
+-- 7. Datos Iniciales (Seed Data)
 -- ==============================================================================
 INSERT IGNORE INTO protocolos (numero, nombre, categoria, descripcion) VALUES
 (20, 'FTP-DATA', 'inseguro', 'File Transfer Protocol (Data)'),
