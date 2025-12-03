@@ -6,6 +6,14 @@
 
 SET FOREIGN_KEY_CHECKS = 0;
 
+-- Eliminar tablas en orden inverso para evitar errores de FK
+DROP TABLE IF EXISTS logs;
+DROP TABLE IF EXISTS protocolos_usados;
+DROP TABLE IF EXISTS conflictos;
+DROP TABLE IF EXISTS equipos;
+DROP TABLE IF EXISTS protocolos;
+DROP TABLE IF EXISTS fabricantes;
+
 -- ==============================================================================
 -- 1. Tabla: fabricantes
 -- ==============================================================================
@@ -43,10 +51,12 @@ CREATE TABLE IF NOT EXISTS equipos (
     hostname VARCHAR(255) NULL COMMENT 'Nombre de host resuelto o NetBIOS',
     ip VARCHAR(45) NOT NULL COMMENT 'Dirección IP del dispositivo',
     mac VARCHAR(17) NULL COMMENT 'Dirección MAC en formato XX:XX:XX:XX:XX:XX',
-    fabricante_id INT NULL COMMENT 'ID del fabricante (FK)',
+    fabricante_id INT NOT NULL COMMENT 'ID del fabricante (FK) - Obligatorio',
     sistema_operativo VARCHAR(100) NULL COMMENT 'Sistema Operativo o tipo de dispositivo detectado',
     ultima_deteccion DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Timestamp de la última vez que fue visto',
-    CONSTRAINT fk_equipos_fabricante FOREIGN KEY (fabricante_id) REFERENCES fabricantes(id_fabricante) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT fk_equipos_fabricante FOREIGN KEY (fabricante_id) REFERENCES fabricantes(id_fabricante) ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT uk_equipos_ip UNIQUE (ip),
+    CONSTRAINT uk_equipos_mac UNIQUE (mac),
     CONSTRAINT chk_equipos_ip_length CHECK (CHAR_LENGTH(ip) >= 7 AND CHAR_LENGTH(ip) <= 45),
     CONSTRAINT chk_equipos_mac_length CHECK (mac IS NULL OR CHAR_LENGTH(mac) = 17),
     INDEX idx_equipos_ip (ip),
@@ -117,6 +127,9 @@ CREATE TABLE IF NOT EXISTS logs (
 -- ==============================================================================
 -- 7. Datos Iniciales (Seed Data)
 -- ==============================================================================
+-- Fabricante por defecto para equipos desconocidos
+INSERT IGNORE INTO fabricantes (id_fabricante, nombre, oui_mac) VALUES (1, 'Desconocido', '000000');
+
 INSERT IGNORE INTO protocolos (numero, nombre, categoria, descripcion) VALUES
 (20, 'FTP-DATA', 'inseguro', 'File Transfer Protocol (Data)'),
 (21, 'FTP', 'inseguro', 'File Transfer Protocol (Control)'),

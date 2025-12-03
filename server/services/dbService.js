@@ -132,11 +132,16 @@ class DbService {
                 return id;
             } else {
                 // Insertar
-                const [result] = await conn.execute(
-                    'INSERT INTO equipos (hostname, ip, mac, sistema_operativo, fabricante_id, ultima_deteccion) VALUES (?, ?, ?, ?, ?, NOW())',
-                    [equipoData.hostname, equipoData.ip, equipoData.mac, equipoData.os, equipoData.fabricante_id]
-                );
-                return result.insertId;
+            // b) Equipo
+            // Asegurar que fabricante_id no sea nulo (Constraint NOT NULL)
+            // Usar ID 1 (Desconocido) si no se pudo determinar
+            const finalFabricanteId = equipoData.fabricante_id || 1;
+
+            const [result] = await conn.execute(
+                'INSERT INTO equipos (hostname, ip, mac, sistema_operativo, fabricante_id, ultima_deteccion) VALUES (?, ?, ?, ?, ?, NOW())',
+                [equipoData.hostname, equipoData.ip, equipoData.mac, equipoData.os, finalFabricanteId]
+            );
+            return result.insertId;
             }
         } finally {
             await conn.end();
