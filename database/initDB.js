@@ -21,7 +21,7 @@ async function initializeDatabase() {
         console.log('\n2️⃣ Ejecutando archivos SQL...\n');
         
         // 2. Ejecutar migración inicial (Esquema completo)
-        const migrationPath = path.join(__dirname, 'migrations', '007_initial_schema.sql');
+        const migrationPath = path.join(__dirname, 'migrations', 'init_database.sql');
         console.log(`📄 Ejecutando migración: ${path.basename(migrationPath)}`);
         await executeSQLFile(migrationPath);
         
