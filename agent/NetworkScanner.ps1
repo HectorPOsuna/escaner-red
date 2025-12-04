@@ -712,7 +712,7 @@ function Test-HostConnectivity {
             # Obtener dirección MAC desde ARP
             $MacAddress = Get-MacAddress -IpAddress $IpAddress
             if ([string]::IsNullOrEmpty($MacAddress)) {
-                $MacAddress = "No disponible"
+                $MacAddress = $null
             }
             
             # Obtener fabricante desde OUI
@@ -850,7 +850,7 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                 }
                 
                 if ([string]::IsNullOrEmpty($MacAddr)) {
-                    $MacAddr = "No disponible"
+                    $MacAddr = $null
                 }
                 
                 # Obtener fabricante desde OUI
@@ -959,66 +959,11 @@ $InactiveCount = ($Results | Where-Object { $_.Status -eq "Inactive" }).Count
 
 # Generar reporte consolidado
 try {
-    # Crear contenido del reporte
-    $ReportContent = @()
-    
-    # Encabezado del reporte
-    $ReportContent += "================================================================"
-    $ReportContent += "   REPORTE DE ESCANEO DE RED - MONITOR DE PROTOCOLOS"
-    $ReportContent += "================================================================"
-    $ReportContent += "Fecha y Hora: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    $ReportContent += "Subred escaneada: ${SubnetPrefix}0/24"
-    $ReportContent += "Total de IPs escaneadas: $($Results.Count)"
-    $ReportContent += "Hosts activos encontrados: $($ActiveHosts.Count)"
-    $ReportContent += "Hosts inactivos: $InactiveCount"
-    $ReportContent += "================================================================"
-    $ReportContent += ""
-    
-    if ($ActiveHosts.Count -gt 0) {
-        $ReportContent += "HOSTS ACTIVOS DETECTADOS:"
-        $ReportContent += "----------------------------------------------------------------"
-        $ReportContent += ""
-        
-        foreach ($ActiveHost in $ActiveHosts) {
-            $ReportContent += "IP: $($ActiveHost.IP)"
-            $ReportContent += "Hostname: $($ActiveHost.Hostname)"
-            $ReportContent += "OS: $($ActiveHost.OS)"
-            $ReportContent += "MAC Address: $($ActiveHost.MacAddress)"
-            $ReportContent += "Fabricante: $($ActiveHost.Manufacturer)"
-            
-            # Agregar información de puertos con formato mejorado
-            if ($ActiveHost.OpenPorts -and $ActiveHost.OpenPorts.Count -gt 0) {
-                $ReportContent += "Puertos Abiertos: $($ActiveHost.OpenPorts.Count) puerto(s) detectado(s)"
-                $ReportContent += ""
-                $ReportContent += "  Lista de Puertos y Protocolos:"
-                $ReportContent += "  ----------------------------------------"
-                foreach ($Port in $ActiveHost.OpenPorts) {
-                    $ReportContent += "  Puerto: $($Port.Port) | Protocolo: $($Port.Protocol) | Hora: $($Port.DetectedAt)"
-                }
-                $ReportContent += "  ----------------------------------------"
-            } else {
-                $ReportContent += "Puertos Abiertos: Ninguno detectado"
-            }
-            
-            $ReportContent += ""
-        }
-    }
-    else {
-        $ReportContent += "No se encontraron hosts activos en la red."
-        $ReportContent += ""
-    }
-    
-    $ReportContent += "================================================================"
-    $ReportContent += "Fin del reporte"
-    $ReportContent += "================================================================"
-    
-    # Exportar reporte
-    $ReportContent | Out-File -FilePath $OutputFileReport -Encoding UTF8 -Force
-    
-    Write-Host "Reporte generado correctamente." -ForegroundColor Green
+    # Reporte de texto deshabilitado por solicitud del usuario
+    Write-Host "Reporte de texto deshabilitado. Solo se enviarán datos a la API." -ForegroundColor Gray
 }
 catch {
-    Write-Error "Error al generar reporte: $_"
+    Write-Error "Error al procesar resultados: $_"
 }
 
 # ==============================================================================
