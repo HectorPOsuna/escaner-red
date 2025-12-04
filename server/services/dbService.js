@@ -21,6 +21,16 @@ class DbService {
         }
     }
 
+    async getFabricanteByOui(oui) {
+        const conn = await this.getConnection();
+        try {
+            const [rows] = await conn.execute('SELECT * FROM fabricantes WHERE oui_mac = ?', [oui]);
+            return rows[0];
+        } finally {
+            await conn.end();
+        }
+    }
+
     async createFabricante(nombre, oui = '000000') {
         const conn = await this.getConnection();
         try {
@@ -37,6 +47,38 @@ class DbService {
     }
 
     // --- Equipos ---
+    async getAllEquipos() {
+        const conn = await this.getConnection();
+        try {
+            const query = `
+                SELECT 
+                    e.id_equipo,
+                    e.hostname,
+                    e.ip,
+                    e.mac,
+                    so.nombre as os,
+                    f.nombre as fabricante,
+                    e.ultima_deteccion,
+                    (
+                        SELECT p.nombre 
+                        FROM protocolos_usados pu 
+                        JOIN protocolos p ON pu.id_protocolo = p.id_protocolo 
+                        WHERE pu.id_equipo = e.id_equipo 
+                        ORDER BY pu.fecha_hora DESC 
+                        LIMIT 1
+                    ) as ultimo_protocolo
+                FROM equipos e
+                LEFT JOIN fabricantes f ON e.fabricante_id = f.id_fabricante
+                LEFT JOIN sistemas_operativos so ON e.id_so = so.id_so
+                ORDER BY e.ultima_deteccion DESC
+            `;
+            const [rows] = await conn.execute(query);
+            return rows;
+        } finally {
+            await conn.end();
+        }
+    }
+
     async getEquipoByMac(mac) {
         const conn = await this.getConnection();
         try {
@@ -57,10 +99,59 @@ class DbService {
         }
     }
 
+    async getEquipoByHostname(hostname) {
+        const conn = await this.getConnection();
+        try {
+            const [rows] = await conn.execute('SELECT * FROM equipos WHERE hostname = ?', [hostname]);
+            return rows[0];
+        } finally {
+            await conn.end();
+        }
+    }
+
+    async getOrCreateSistemaOperativo(nombre) {
+        if (!nombre) return null;
+        const conn = await this.getConnection();
+        try {
+            // 1. Buscar si existe
+            const [rows] = await conn.execute('SELECT id_so FROM sistemas_operativos WHERE nombre = ?', [nombre]);
+            if (rows.length > 0) return rows[0].id_so;
+
+            // 2. Si no existe, crear
+            const [result] = await conn.execute('INSERT INTO sistemas_operativos (nombre) VALUES (?)', [nombre]);
+            return result.insertId;
+        } finally {
+            await conn.end();
+        }
+    }
+
     async upsertEquipo(equipoData) {
         const conn = await this.getConnection();
         try {
-            // Intentar buscar por MAC primero
+            // a) Fabricante
+            let fabricanteId = null;
+            if (equipoData.mac) {
+                const oui = equipoData.mac.substring(0, 8).replace(/:/g, '').toUpperCase(); // XX:XX:XX -> XXXXXX
+                const fabricante = await this.getFabricanteByOui(oui);
+                if (fabricante) {
+                    fabricanteId = fabricante.id_fabricante;
+                }
+            }
+            
+            // Si no se encontró por MAC, intentar buscar o crear por nombre si viene en los datos
+            if (!fabricanteId && equipoData.vendor) {
+                fabricanteId = await this.createFabricante(equipoData.vendor, '000000'); // OUI dummy si es por nombre
+            }
+
+            // b) Sistema Operativo (Normalización)
+            const soId = await this.getOrCreateSistemaOperativo(equipoData.os);
+
+            // c) Equipo
+            // Asegurar que fabricante_id no sea nulo (Constraint NOT NULL)
+            // Usar ID 1 (Desconocido) si no se pudo determinar
+            const finalFabricanteId = fabricanteId || 1;
+
+            // Verificar si existe por MAC o IP
             let existing = null;
             if (equipoData.mac) {
                 [existing] = await conn.execute('SELECT * FROM equipos WHERE mac = ?', [equipoData.mac]);
@@ -75,15 +166,15 @@ class DbService {
                 // Actualizar
                 const id = existing[0].id_equipo;
                 await conn.execute(
-                    'UPDATE equipos SET hostname = ?, ip = ?, sistema_operativo = ?, fabricante_id = ?, ultima_deteccion = NOW() WHERE id_equipo = ?',
-                    [equipoData.hostname, equipoData.ip, equipoData.os, equipoData.fabricante_id, id]
+                    'UPDATE equipos SET hostname = ?, ip = ?, mac = ?, id_so = ?, fabricante_id = ?, ultima_deteccion = NOW() WHERE id_equipo = ?',
+                    [equipoData.hostname, equipoData.ip, equipoData.mac, soId, finalFabricanteId, id]
                 );
                 return id;
             } else {
                 // Insertar
                 const [result] = await conn.execute(
-                    'INSERT INTO equipos (hostname, ip, mac, sistema_operativo, fabricante_id, ultima_deteccion) VALUES (?, ?, ?, ?, ?, NOW())',
-                    [equipoData.hostname, equipoData.ip, equipoData.mac, equipoData.os, equipoData.fabricante_id]
+                    'INSERT INTO equipos (hostname, ip, mac, id_so, fabricante_id, ultima_deteccion) VALUES (?, ?, ?, ?, ?, NOW())',
+                    [equipoData.hostname, equipoData.ip, equipoData.mac, soId, finalFabricanteId]
                 );
                 return result.insertId;
             }
@@ -112,6 +203,31 @@ class DbService {
         try {
             const [rows] = await conn.execute('SELECT * FROM protocolos WHERE numero = ?', [port]);
             return rows[0];
+        } finally {
+            await conn.end();
+        }
+    }
+
+    async getAllProtocols() {
+        const conn = await this.getConnection();
+        try {
+            // Limitamos a puertos comunes si son demasiados, o traemos todos.
+            // Para el escáner, traeremos todos los que tengan categoría definida o sean < 10000
+            const [rows] = await conn.execute('SELECT numero as port, nombre as protocol FROM protocolos ORDER BY numero ASC');
+            return rows;
+        } finally {
+            await conn.end();
+        }
+    }
+
+    async getProtocolosByCategoria(categoria) {
+        const conn = await this.getConnection();
+        try {
+            const [rows] = await conn.execute(
+                'SELECT numero as port, nombre as protocol, descripcion FROM protocolos WHERE categoria = ? ORDER BY numero ASC', 
+                [categoria]
+            );
+            return rows;
         } finally {
             await conn.end();
         }

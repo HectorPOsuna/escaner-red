@@ -48,7 +48,7 @@ async function executeSQLFile(sqlFilePath) {
         
         // Ejecutar el SQL
         console.log('⚙️  Ejecutando SQL...');
-        const [results] = await connection.execute(sqlContent);
+        const [results] = await connection.query(sqlContent);
         
         console.log('✅ SQL ejecutado exitosamente');
         console.log('📊 Resultados:', results);

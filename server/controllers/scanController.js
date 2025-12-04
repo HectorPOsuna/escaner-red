@@ -64,8 +64,38 @@ async function processScanResults(req, res) {
                             hostname: host.hostname,
                             description: `Conflicto de MAC: El dispositivo ${host.mac} cambió de nombre de ${existingMac.hostname} a ${host.hostname}`
                         });
-                        // Nota: El usuario pidió registrar conflicto, pero esto también podría ser un rename legítimo.
-                        // Lo registramos como conflicto según requerimiento, pero permitimos la actualización del equipo abajo.
+                        conflictDetected = true;
+                        results.conflicts++;
+                    }
+                }
+            }
+
+            // C) Conflicto de Hostname: El hostname existe pero con otra IP o MAC
+            if (host.hostname && host.hostname !== 'Desconocido') {
+                const existingHostname = await dbService.getEquipoByHostname(host.hostname);
+                if (existingHostname) {
+                    // Verificar si la IP es diferente (y ambas existen)
+                    if (host.ip && existingHostname.ip && host.ip !== existingHostname.ip) {
+                        // Si la MAC es igual, es un cambio de IP legítimo (DHCP). Si es diferente o nula, es sospechoso.
+                        if (!host.mac || !existingHostname.mac || host.mac !== existingHostname.mac) {
+                            await dbService.registerConflict({
+                                ip: host.ip,
+                                mac: host.mac,
+                                hostname: host.hostname,
+                                description: `Conflicto de Hostname: El nombre ${host.hostname} está siendo usado por ${host.ip} (${host.mac || 'No MAC'}), pero pertenecía a ${existingHostname.ip} (${existingHostname.mac || 'No MAC'})`
+                            });
+                            conflictDetected = true;
+                            results.conflicts++;
+                        }
+                    }
+                    // Verificar si la MAC es diferente (Spoofing de nombre)
+                    else if (host.mac && existingHostname.mac && host.mac !== existingHostname.mac) {
+                        await dbService.registerConflict({
+                            ip: host.ip,
+                            mac: host.mac,
+                            hostname: host.hostname,
+                            description: `Conflicto de Identidad: El nombre ${host.hostname} apareció con una nueva MAC ${host.mac} (antes ${existingHostname.mac})`
+                        });
                         conflictDetected = true;
                         results.conflicts++;
                     }
@@ -78,10 +108,23 @@ async function processScanResults(req, res) {
             
             // a) Fabricante
             let fabricanteId = null;
-            if (host.manufacturer && host.manufacturer !== 'Desconocido') {
-                // Usar OUI de la MAC si está disponible, sino un dummy
-                const oui = host.mac ? host.mac.replace(/[:-]/g, '').substring(0, 6).toUpperCase() : '000000';
-                fabricanteId = await dbService.createFabricante(host.manufacturer, oui);
+            let oui = null;
+
+            if (host.mac) {
+                // Normalizar OUI: XX:XX:XX... -> XXXXXX (primeros 6 chars)
+                oui = host.mac.replace(/[:-]/g, '').substring(0, 6).toUpperCase();
+                
+                // 1. Intentar buscar por OUI en la base de datos (prioridad)
+                const fabricanteDb = await dbService.getFabricanteByOui(oui);
+                
+                if (fabricanteDb) {
+                    fabricanteId = fabricanteDb.id_fabricante;
+                }
+            }
+
+            // 2. Si no se encontró por OUI, pero el agente envió un nombre válido, crearlo/buscarlo por nombre
+            if (!fabricanteId && host.manufacturer && host.manufacturer !== 'Desconocido') {
+                fabricanteId = await dbService.createFabricante(host.manufacturer, oui || '000000');
             }
 
             // b) Equipo
@@ -96,12 +139,22 @@ async function processScanResults(req, res) {
             // c) Protocolos
             if (host.open_ports && Array.isArray(host.open_ports)) {
                 for (const portInfo of host.open_ports) {
-                    // Asegurar que el protocolo existe en el catálogo
-                    const protocoloId = await dbService.createProtocolo(
-                        portInfo.port, 
-                        portInfo.protocol || 'Unknown', 
-                        'otro' // Categoría por defecto
-                    );
+                    let protocoloId = null;
+
+                    // 1. Intentar buscar el protocolo en nuestro catálogo (prioridad a IANA/Seed)
+                    const existingProtocol = await dbService.getProtocoloByPort(portInfo.port);
+                    
+                    if (existingProtocol) {
+                        protocoloId = existingProtocol.id_protocolo;
+                    } else {
+                        // 2. Si no existe, lo creamos con la información del agente (o Unknown)
+                        // Esto permite aprender nuevos puertos no catalogados
+                        protocoloId = await dbService.createProtocolo(
+                            portInfo.port, 
+                            portInfo.protocol || 'Unknown', 
+                            'otro'
+                        );
+                    }
 
                     // Registrar uso
                     if (protocoloId) {
@@ -109,9 +162,7 @@ async function processScanResults(req, res) {
                             equipoId, 
                             protocoloId, 
                             portInfo.port, 
-                            // Convertir timestamp de PowerShell a formato MySQL si es necesario, o usar NOW()
-                            // El formato de PS es "HH:mm:ss", le falta fecha. Usaremos la fecha del scan_timestamp
-                            new Date() // Simplificación: usar hora actual del servidor
+                            new Date() // Usar hora actual del servidor
                         );
                     }
                 }
@@ -131,4 +182,44 @@ async function processScanResults(req, res) {
     });
 }
 
-module.exports = { processScanResults };
+async function getProtocols(req, res) {
+    try {
+        const protocols = await dbService.getAllProtocols();
+        res.json(protocols);
+    } catch (error) {
+        console.error('❌ Error obteniendo protocolos:', error.message);
+        res.status(500).json({ error: 'Error retrieving protocols' });
+    }
+}
+
+async function getEquipos(req, res) {
+    try {
+        const equipos = await dbService.getAllEquipos();
+        res.json(equipos);
+    } catch (error) {
+        console.error('❌ Error obteniendo equipos:', error.message);
+        res.status(500).json({ error: 'Error retrieving equipment list' });
+    }
+}
+
+async function getProtocolosSeguros(req, res) {
+    try {
+        const protocolos = await dbService.getProtocolosByCategoria('seguro');
+        res.json(protocolos);
+    } catch (error) {
+        console.error('❌ Error obteniendo protocolos seguros:', error.message);
+        res.status(500).json({ error: 'Error retrieving secure protocols' });
+    }
+}
+
+async function getProtocolosInseguros(req, res) {
+    try {
+        const protocolos = await dbService.getProtocolosByCategoria('inseguro');
+        res.json(protocolos);
+    } catch (error) {
+        console.error('❌ Error obteniendo protocolos inseguros:', error.message);
+        res.status(500).json({ error: 'Error retrieving insecure protocols' });
+    }
+}
+
+module.exports = { processScanResults, getProtocols, getEquipos, getProtocolosSeguros, getProtocolosInseguros };
