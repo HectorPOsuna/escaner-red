@@ -95,110 +95,17 @@ Write-Host "----------------------------------------------------------------"
 # SECCIÓN 2: FUNCIONES AUXILIARES
 # ==============================================================================
 
-function Start-BackendServices {
-    <#
-    .SYNOPSIS
-        Inicia los servicios de backend (Node.js) si no están corriendo.
-    #>
-    $Port = 3000
-    $ServerPath = Join-Path -Path $PSScriptRoot -ChildPath "..\server\app.js"
-    $ServerDir = Join-Path -Path $PSScriptRoot -ChildPath "..\server"
-    
-    # Verificar si el puerto está en uso
-    $PortInUse = $false
-    try {
-        $TcpConnection = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
-        if ($TcpConnection) { $PortInUse = $true }
-    } catch {
-        # Fallback para versiones antiguas de PS
-        $PortInUse = $false
-    }
+# Configuración de Backend (PHP)
+$EnableApiExport = $true
+$ScanResultsFile = Join-Path -Path $PSScriptRoot -ChildPath "scan_results.json"
+$PhpProcessorScript = Join-Path -Path $PSScriptRoot -ChildPath "..\server\cron_process.php"
+$PhpExecutable = "php" # Asumimos que está en PATH, o el usuario lo configurará
 
-    if (-not $PortInUse) {
-        Write-Host "Iniciando servidor backend en segundo plano..." -ForegroundColor Cyan
-        
-        # Intentar encontrar node.exe
-        $NodeExe = "node"
-        if (Test-Path "C:\Program Files\nodejs\node.exe") {
-            $NodeExe = "C:\Program Files\nodejs\node.exe"
-        }
-        
-        try {
-            # Iniciar proceso de forma silenciosa
-            $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
-            $ProcessInfo.FileName = $NodeExe
-            $ProcessInfo.Arguments = "app.js"
-            $ProcessInfo.WorkingDirectory = $ServerDir
-            $ProcessInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-            $ProcessInfo.CreateNoWindow = $true
-            $ProcessInfo.UseShellExecute = $true
-            
-            [System.Diagnostics.Process]::Start($ProcessInfo) | Out-Null
-            
-            # Esperar un momento para que inicie
-            Start-Sleep -Seconds 3
-            
-            # Verificar nuevamente si inició
-            try {
-                $TcpConnection = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
-                if ($TcpConnection) {
-                    Write-Host "Servidor iniciado correctamente." -ForegroundColor Green
-                    return $true
-                }
-            } catch {}
-            
-            Write-Warning "El servidor parece no haber iniciado correctamente."
-            return $false
-        } catch {
-            Write-Warning "No se pudo iniciar el servidor backend automáticamente. Modo Offline activado."
-            return $false
-        }
-    } else {
-        # Write-Host "Servidor backend ya está corriendo." -ForegroundColor DarkGray
-        return $true
-    }
-}
-
-# Iniciar servicios y determinar modo
-$BackendOnline = Start-BackendServices
-
-if (-not $BackendOnline) {
-    Write-Host "⚠️  MODO OFFLINE ACTIVADO: No hay conexión con el backend." -ForegroundColor Yellow
-    Write-Host "    Los resultados se guardarán solo localmente en archivos de texto." -ForegroundColor Gray
-    $EnableApiExport = $false
-} else {
-    $EnableApiExport = $true
-}
+Write-Host "Modo Backend: PHP (Archivo + Cron/Trigger)" -ForegroundColor Cyan
 
 function Get-RemoteProtocols {
-    <#
-    .SYNOPSIS
-        Obtiene la lista de protocolos desde la API del backend.
-    #>
-    if (-not $EnableApiExport) { return $null }
-    
-    $ProtocolsUrl = $ApiUrl.Replace("/scan-results", "/protocolos")
-    
-    try {
-        Write-Host "Sincronizando base de datos de protocolos..." -ForegroundColor Cyan
-        $Response = Invoke-RestMethod -Uri $ProtocolsUrl -Method Get -ErrorAction Stop -TimeoutSec 5
-        
-        $RemotePorts = @()
-        foreach ($Item in $Response) {
-            $RemotePorts += @{
-                Port = [int]$Item.port
-                Protocol = $Item.protocol
-            }
-        }
-        
-        if ($RemotePorts.Count -gt 0) {
-            Write-Host "✅ Sincronizados $($RemotePorts.Count) protocolos desde el backend." -ForegroundColor Green
-            return $RemotePorts
-        }
-    } catch {
-        Write-Warning "No se pudo sincronizar protocolos desde la API. Usando base de datos local."
-        # Write-Warning $_.Exception.Message
-    }
+    # La sincronización remota se deshabilita temporalmente al usar el modo PHP desacoplado
+    # El backend PHP procesará los puertos y aprenderá nuevos automáticamente.
     return $null
 }
 
@@ -585,7 +492,7 @@ function Clean-ExpiredCache {
 function Send-ResultsToApi {
     <#
     .SYNOPSIS
-        Envía los resultados del escaneo a la API backend.
+        Guarda los resultados en JSON y ejecuta el procesador PHP.
     .PARAMETER Results
         Array de objetos con los resultados del escaneo.
     .PARAMETER Subnet
@@ -600,13 +507,13 @@ function Send-ResultsToApi {
         return
     }
     
-    Write-Host "Preparando envío de datos a la API..." -ForegroundColor Yellow
+    Write-Host "Preparando datos para el backend PHP..." -ForegroundColor Yellow
     
     # Filtrar solo hosts activos y formatear para JSON
     $ActiveHosts = $Results | Where-Object { $_.Status -eq "Active" }
     
     if ($ActiveHosts.Count -eq 0) {
-        Write-Host "No hay hosts activos para enviar." -ForegroundColor Yellow
+        Write-Host "No hay hosts activos para procesar." -ForegroundColor Yellow
         return
     }
     
@@ -643,15 +550,49 @@ function Send-ResultsToApi {
     try {
         $JsonPayload = $Payload | ConvertTo-Json -Depth 10
         
-        Write-Host "Enviando $($HostsPayload.Count) hosts a $ApiUrl..." -ForegroundColor Cyan
+        Write-Host "💾 Guardando resultados en $ScanResultsFile..." -ForegroundColor Cyan
+        $JsonPayload | Out-File -FilePath $ScanResultsFile -Encoding UTF8 -Force
         
-        $Response = Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $JsonPayload -ContentType "application/json" -ErrorAction Stop
+        Write-Host "✅ Archivo JSON generado correctamente." -ForegroundColor Green
         
-        Write-Host "✅ Datos enviados correctamente a la API." -ForegroundColor Green
+        # Trigger PHP Processor
+        if (Test-Path $PhpProcessorScript) {
+            Write-Host "🚀 Ejecutando procesador PHP..." -ForegroundColor Cyan
+            
+            # Intentar ejecutar PHP
+            try {
+                $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+                $ProcessInfo.FileName = $PhpExecutable
+                $ProcessInfo.Arguments = $PhpProcessorScript
+                $ProcessInfo.UseShellExecute = $false
+                $ProcessInfo.RedirectStandardOutput = $true
+                $ProcessInfo.RedirectStandardError = $true
+                $ProcessInfo.CreateNoWindow = $true
+                
+                $Process = [System.Diagnostics.Process]::Start($ProcessInfo)
+                $Process.WaitForExit()
+                
+                $Output = $Process.StandardOutput.ReadToEnd()
+                $Error = $Process.StandardError.ReadToEnd()
+                
+                if ($Process.ExitCode -eq 0) {
+                    Write-Host "✅ Procesamiento PHP completado." -ForegroundColor Green
+                    # Write-Host $Output -ForegroundColor Gray
+                } else {
+                    Write-Warning "⚠️ El procesador PHP terminó con errores (Código $($Process.ExitCode))."
+                    Write-Warning $Error
+                }
+            } catch {
+                Write-Warning "No se pudo ejecutar PHP automáticamente. Asegúrate de que 'php' esté en el PATH o configura `$PhpExecutable`."
+                Write-Warning "El archivo JSON está listo para ser procesado manualmente."
+            }
+        } else {
+            Write-Warning "No se encontró el script del procesador PHP en: $PhpProcessorScript"
+        }
+
     }
     catch {
-        Write-Warning "❌ Error al enviar datos a la API: $($_.Exception.Message)"
-        # No detenemos el script, solo notificamos el error de envío
+        Write-Warning "❌ Error al guardar/procesar datos: $($_.Exception.Message)"
     }
 }
 
