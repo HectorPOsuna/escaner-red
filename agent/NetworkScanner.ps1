@@ -18,23 +18,40 @@
 # SECCIÓN 1: CONFIGURACIÓN
 # ==============================================================================
 
-# Subred a escanear (Formato C: xxx.xxx.xxx.)
-# Se asume máscara /24 (1-254)
-$SubnetPrefix = "192.168.1."
+# Cargar configuración externa si existe
+$ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "config.ps1"
+if (Test-Path $ConfigFile) {
+    . $ConfigFile
+    Write-Host "✅ Configuración cargada desde config.ps1" -ForegroundColor Green
+} else {
+    # Valores por defecto si no existe config.ps1
+    $OperationMode = "hybrid"
+    $ApiEnabled = $true
+    $ApiUrl = "http://localhost/escaner-red/server/api/receive.php"
+    $ApiTimeout = 10
+    $ApiRetries = 3
+    $ApiRetryDelay = 2
+    $SubnetPrefix = "192.168.1."
+    $PortScanEnabled = $true
+    $PortScanTimeout = 500
+    $PortCacheTTLMinutes = 10
+    $ScanResultsFile = "scan_results.json"
+    $PhpProcessorScript = "..\server\cron_process.php"
+    $PhpExecutable = "php"
+    Write-Host "⚠️  Usando configuración por defecto (config.ps1 no encontrado)" -ForegroundColor Yellow
+}
 
 # Archivos de salida
 $OutputFileReport = Join-Path -Path $PSScriptRoot -ChildPath "reporte_de_red.txt"
 $ScanHistoryFile = Join-Path -Path $PSScriptRoot -ChildPath "ultimo_escaneo.txt"
+$ScanResultsFile = Join-Path -Path $PSScriptRoot -ChildPath $ScanResultsFile
+$PhpProcessorScript = Join-Path -Path $PSScriptRoot -ChildPath $PhpProcessorScript
 
 # Configuración de Ping
 $PingCount = 1
-$PingTimeoutMs = 200 # Timeout en milisegundos (ajustar según latencia de red)
+$PingTimeoutMs = 200
 
-# Configuración de Escaneo de Puertos
-$PortScanEnabled = $true
-$PortScanTimeout = 500 # Timeout en milisegundos por puerto
-
-# Lista de puertos por defecto (Fallback)
+# Lista de puertos por defecto
 $DefaultCommonPorts = @(
     @{Port=21; Protocol="FTP"},
     @{Port=22; Protocol="SSH"},
@@ -53,17 +70,9 @@ $DefaultCommonPorts = @(
 )
 
 $CommonPorts = $DefaultCommonPorts
-
-# Configuración de Caché de Puertos
 $PortCacheFile = Join-Path -Path $PSScriptRoot -ChildPath "port_scan_cache.json"
-$PortCacheTTLMinutes = 10
 
-# Configuración de API Backend
-$EnableApiExport = $true
-$ApiUrl = "http://localhost:3000/api/scan-results" # URL por defecto, ajustable
-$ApiKey = "" # Opcional, para futura autenticación
-
-# Detección de Dominio (para estrategia híbrida de OS detection)
+# Detección de Dominio
 try {
     $IsInDomain = (Get-WmiObject Win32_ComputerSystem).PartOfDomain
 } catch {
@@ -86,6 +95,10 @@ Write-Host "================================================================" -F
 Write-Host "   INICIANDO ESCÁNER DE RED - MONITOR DE PROTOCOLOS" -ForegroundColor Cyan
 Write-Host "================================================================"
 Write-Host "Subred objetivo: ${SubnetPrefix}0/24"
+Write-Host "Modo de operación: $OperationMode" -ForegroundColor Magenta
+if ($ApiEnabled) {
+    Write-Host "API URL: $ApiUrl" -ForegroundColor Cyan
+}
 Write-Host "Version de PowerShell: $($PSVersionTable.PSVersion.ToString())"
 Write-Host "En dominio: $(if ($IsInDomain) { 'Sí (usando WMI/CIM + TTL)' } else { 'No (usando solo TTL)' })"
 Write-Host "Último escaneo: $LastScanInfo" -ForegroundColor Yellow
@@ -94,14 +107,6 @@ Write-Host "----------------------------------------------------------------"
 # ==============================================================================
 # SECCIÓN 2: FUNCIONES AUXILIARES
 # ==============================================================================
-
-# Configuración de Backend (PHP)
-$EnableApiExport = $true
-$ScanResultsFile = Join-Path -Path $PSScriptRoot -ChildPath "scan_results.json"
-$PhpProcessorScript = Join-Path -Path $PSScriptRoot -ChildPath "..\server\cron_process.php"
-$PhpExecutable = "php" # Asumimos que está en PATH, o el usuario lo configurará
-
-Write-Host "Modo Backend: PHP (Archivo + Cron/Trigger)" -ForegroundColor Cyan
 
 function Get-RemoteProtocols {
     # La sincronización remota se deshabilita temporalmente al usar el modo PHP desacoplado
@@ -492,7 +497,7 @@ function Clean-ExpiredCache {
 function Send-ResultsToApi {
     <#
     .SYNOPSIS
-        Guarda los resultados en JSON y ejecuta el procesador PHP.
+        Procesa resultados del escaneo en modo híbrido (API + Local).
     .PARAMETER Results
         Array de objetos con los resultados del escaneo.
     .PARAMETER Subnet
@@ -503,13 +508,9 @@ function Send-ResultsToApi {
         [string]$Subnet
     )
     
-    if (-not $EnableApiExport) {
-        return
-    }
+    Write-Host "📡 Preparando datos para procesamiento..." -ForegroundColor Yellow
     
-    Write-Host "Preparando datos para el backend PHP..." -ForegroundColor Yellow
-    
-    # Filtrar solo hosts activos y formatear para JSON
+    # Filtrar solo hosts activos
     $ActiveHosts = $Results | Where-Object { $_.Status -eq "Active" }
     
     if ($ActiveHosts.Count -eq 0) {
@@ -517,50 +518,86 @@ function Send-ResultsToApi {
         return
     }
     
-    $HostsPayload = @()
+    # Construir payload en formato API
+    $DevicesPayload = @()
     
     foreach ($HostObj in $ActiveHosts) {
-        $OpenPortsList = @()
+        # Convertir puertos a string para el formato API
+        $PortsString = ""
         if ($HostObj.OpenPorts) {
-            foreach ($Port in $HostObj.OpenPorts) {
-                $OpenPortsList += @{
-                    port = $Port.Port
-                    protocol = $Port.Protocol
-                    detected_at = $Port.DetectedAt
+            $PortNumbers = $HostObj.OpenPorts | ForEach-Object { $_.Port }
+            $PortsString = ($PortNumbers -join ",")
+        }
+        
+        $DevicesPayload += @{
+            IP = $HostObj.IP
+            MAC = $HostObj.MacAddress
+            Hostname = $HostObj.Hostname
+            OpenPorts = $PortsString
+        }
+    }
+    
+    $ApiPayload = @{
+        Devices = $DevicesPayload
+    }
+    
+    $JsonPayload = $ApiPayload | ConvertTo-Json -Depth 10
+    
+    # Determinar modo de operación
+    $ApiSuccess = $false
+    
+    if ($OperationMode -eq "api" -or $OperationMode -eq "hybrid") {
+        if ($ApiEnabled) {
+            Write-Host "📡 Enviando datos a la API..." -ForegroundColor Cyan
+            Write-Host "   URL: $ApiUrl" -ForegroundColor Gray
+            
+            # Intentar envío con reintentos
+            for ($attempt = 1; $attempt -le $ApiRetries; $attempt++) {
+                try {
+                    if ($attempt -gt 1) {
+                        Write-Host "   Reintento $attempt de $ApiRetries..." -ForegroundColor Yellow
+                        Start-Sleep -Seconds $ApiRetryDelay
+                    }
+                    
+                    $Response = Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $JsonPayload -ContentType "application/json" -TimeoutSec $ApiTimeout -ErrorAction Stop
+                    
+                    if ($Response.success) {
+                        Write-Host "✅ Datos enviados correctamente a la API." -ForegroundColor Green
+                        Write-Host "   Procesados: $($Response.summary.processed) | Conflictos: $($Response.summary.conflicts) | Errores: $($Response.summary.errors)" -ForegroundColor Gray
+                        $ApiSuccess = $true
+                        break
+                    } else {
+                        Write-Warning "⚠️ La API respondió con error: $($Response.message)"
+                    }
+                }
+                catch {
+                    $ErrorMsg = $_.Exception.Message
+                    if ($attempt -eq $ApiRetries) {
+                        Write-Warning "❌ Error al enviar datos a la API después de $ApiRetries intentos: $ErrorMsg"
+                    } else {
+                        Write-Host "   Error: $ErrorMsg" -ForegroundColor DarkYellow
+                    }
                 }
             }
         }
-        
-        $HostsPayload += @{
-            ip = $HostObj.IP
-            mac = $HostObj.MacAddress
-            hostname = $HostObj.Hostname
-            manufacturer = $HostObj.Manufacturer
-            os = $HostObj.OS
-            open_ports = $OpenPortsList
+    }
+    
+    # Fallback a procesamiento local si es necesario
+    if (($OperationMode -eq "local") -or ($OperationMode -eq "hybrid" -and -not $ApiSuccess)) {
+        if ($OperationMode -eq "hybrid" -and -not $ApiSuccess) {
+            Write-Host "🔄 Activando modo local (fallback)..." -ForegroundColor Yellow
         }
-    }
-    
-    $Payload = @{
-        scan_timestamp = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
-        subnet = "${Subnet}0/24"
-        hosts = $HostsPayload
-    }
-    
-    try {
-        $JsonPayload = $Payload | ConvertTo-Json -Depth 10
         
-        Write-Host "💾 Guardando resultados en $ScanResultsFile..." -ForegroundColor Cyan
-        $JsonPayload | Out-File -FilePath $ScanResultsFile -Encoding UTF8 -Force
-        
-        Write-Host "✅ Archivo JSON generado correctamente." -ForegroundColor Green
-        
-        # Trigger PHP Processor
-        if (Test-Path $PhpProcessorScript) {
-            Write-Host "🚀 Ejecutando procesador PHP..." -ForegroundColor Cyan
+        try {
+            # Guardar archivo JSON
+            Write-Host "💾 Guardando resultados en $ScanResultsFile..." -ForegroundColor Cyan
+            $JsonPayload | Out-File -FilePath $ScanResultsFile -Encoding UTF8 -Force
+            Write-Host "✅ Archivo JSON generado correctamente." -ForegroundColor Green
             
-            # Intentar ejecutar PHP
-            try {
+            # Trigger PHP Processor local
+            if (Test-Path $PhpProcessorScript) {
+                Write-Host "🚀 Ejecutando procesador PHP local..." -ForegroundColor Cyan
+                
                 $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
                 $ProcessInfo.FileName = $PhpExecutable
                 $ProcessInfo.Arguments = $PhpProcessorScript
@@ -573,26 +610,24 @@ function Send-ResultsToApi {
                 $Process.WaitForExit()
                 
                 $Output = $Process.StandardOutput.ReadToEnd()
-                $Error = $Process.StandardError.ReadToEnd()
+                $ErrorOutput = $Process.StandardError.ReadToEnd()
                 
                 if ($Process.ExitCode -eq 0) {
-                    Write-Host "✅ Procesamiento PHP completado." -ForegroundColor Green
-                    # Write-Host $Output -ForegroundColor Gray
+                    Write-Host "✅ Procesamiento local completado." -ForegroundColor Green
                 } else {
                     Write-Warning "⚠️ El procesador PHP terminó con errores (Código $($Process.ExitCode))."
-                    Write-Warning $Error
+                    if ($ErrorOutput) {
+                        Write-Warning $ErrorOutput
+                    }
                 }
-            } catch {
-                Write-Warning "No se pudo ejecutar PHP automáticamente. Asegúrate de que 'php' esté en el PATH o configura `$PhpExecutable`."
-                Write-Warning "El archivo JSON está listo para ser procesado manualmente."
+            } else {
+                Write-Warning "No se encontró el script del procesador PHP en: $PhpProcessorScript"
+                Write-Host "El archivo JSON está disponible para procesamiento manual." -ForegroundColor Gray
             }
-        } else {
-            Write-Warning "No se encontró el script del procesador PHP en: $PhpProcessorScript"
         }
-
-    }
-    catch {
-        Write-Warning "❌ Error al guardar/procesar datos: $($_.Exception.Message)"
+        catch {
+            Write-Warning "❌ Error en procesamiento local: $($_.Exception.Message)"
+        }
     }
 }
 
