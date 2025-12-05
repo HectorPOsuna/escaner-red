@@ -79,7 +79,7 @@ namespace NetworkScannerService
 
         /// <summary>
         /// Función principal que ejecuta el agente de escaneo
-        /// AQUÍ DEBES PONER TU LÓGICA REAL
+        /// Ejecuta NetworkScanner.ps1 y procesa los resultados
         /// </summary>
         private void EjecutarAgente()
         {
@@ -88,23 +88,106 @@ namespace NetworkScannerService
                 EscribirLog("=== INICIO DE EJECUCIÓN DEL AGENTE ===");
                 _logger.LogInformation("Ejecutando agente de escaneo a las: {time}", DateTimeOffset.Now);
 
-                // ============================================
-                // SIMULACIÓN - REEMPLAZAR CON LÓGICA REAL
-                // ============================================
-                
-                // Aquí irá tu código real, por ejemplo:
-                // 1. Ejecutar NetworkScanner.ps1
-                // 2. Leer scan_results.json
-                // 3. Enviar a la API
-                // 4. Procesar resultados
+                // Ruta al script PowerShell
+                // Ajustar según la ubicación real del servicio
+                string scriptPath = Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    @"..\agent\NetworkScanner.ps1"
+                );
 
-                EscribirLog("Simulando escaneo de red...");
-                Thread.Sleep(2000); // Simular trabajo
-                EscribirLog("Escaneo completado exitosamente");
+                // Normalizar la ruta
+                scriptPath = Path.GetFullPath(scriptPath);
 
-                // Ejemplo de lo que podrías hacer:
-                // var resultado = EjecutarPowerShellScript();
-                // EnviarDatosAApi(resultado);
+                if (!File.Exists(scriptPath))
+                {
+                    EscribirLog($"ERROR: No se encontró el script en: {scriptPath}");
+                    _logger.LogError("Script PowerShell no encontrado en: {path}", scriptPath);
+                    return;
+                }
+
+                EscribirLog($"Ejecutando script: {scriptPath}");
+
+                // Configurar el proceso de PowerShell
+                var processStartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = $"-ExecutionPolicy Bypass -NoProfile -File \"{scriptPath}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Path.GetDirectoryName(scriptPath)
+                };
+
+                using (var process = new System.Diagnostics.Process())
+                {
+                    process.StartInfo = processStartInfo;
+
+                    // Capturar salida estándar
+                    var outputBuilder = new System.Text.StringBuilder();
+                    var errorBuilder = new System.Text.StringBuilder();
+
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                        {
+                            outputBuilder.AppendLine(e.Data);
+                            EscribirLog($"[PS] {e.Data}");
+                        }
+                    };
+
+                    process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                        {
+                            errorBuilder.AppendLine(e.Data);
+                            EscribirLog($"[PS ERROR] {e.Data}");
+                        }
+                    };
+
+                    // Iniciar el proceso
+                    EscribirLog("Iniciando proceso PowerShell...");
+                    process.Start();
+
+                    // Comenzar a leer las salidas de forma asíncrona
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+
+                    // Esperar a que termine (con timeout de 10 minutos)
+                    bool finished = process.WaitForExit(600000); // 10 minutos
+
+                    if (!finished)
+                    {
+                        EscribirLog("ADVERTENCIA: El script excedió el tiempo límite de 10 minutos. Terminando proceso...");
+                        process.Kill();
+                        _logger.LogWarning("Script PowerShell excedió el tiempo límite");
+                    }
+                    else
+                    {
+                        int exitCode = process.ExitCode;
+                        EscribirLog($"Script finalizado. Código de salida: {exitCode}");
+
+                        if (exitCode == 0)
+                        {
+                            EscribirLog("✅ Escaneo completado exitosamente");
+                            _logger.LogInformation("Escaneo completado exitosamente");
+                        }
+                        else
+                        {
+                            EscribirLog($"⚠️ El script finalizó con código de error: {exitCode}");
+                            _logger.LogWarning("Script finalizó con código de error: {code}", exitCode);
+                        }
+
+                        // Registrar errores si los hay
+                        string errors = errorBuilder.ToString();
+                        if (!string.IsNullOrWhiteSpace(errors))
+                        {
+                            EscribirLog("Errores capturados:");
+                            EscribirLog(errors);
+                            _logger.LogError("Errores PowerShell: {errors}", errors);
+                        }
+                    }
+                }
 
                 EscribirLog("=== FIN DE EJECUCIÓN DEL AGENTE ===");
             }
