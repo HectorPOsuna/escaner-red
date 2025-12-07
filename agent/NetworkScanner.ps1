@@ -663,7 +663,6 @@ function Test-HostConnectivity {
 
     try {
         # Usar clase .NET Ping para mayor control sobre el Timeout (ms) y mejor rendimiento
-        # Esto soluciona el problema de la variable $PingTimeoutMs no utilizada
         $Ping = [System.Net.NetworkInformation.Ping]::new()
         $Reply = $Ping.Send($IpAddress, $PingTimeoutMs)
         $IsActive = ($Reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
@@ -725,6 +724,7 @@ function Test-HostConnectivity {
         OpenPorts    = $OpenPorts
     }
 }
+
 
 # ==============================================================================
 # SECCIÓN 3: EJECUCIÓN DEL ESCANEO
