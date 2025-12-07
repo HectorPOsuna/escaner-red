@@ -23,7 +23,8 @@ $ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "config.ps1"
 if (Test-Path $ConfigFile) {
     . $ConfigFile
     Write-Host "✅ Configuración cargada desde config.ps1" -ForegroundColor Green
-} else {
+}
+else {
     # Valores por defecto si no existe config.ps1
     $OperationMode = "hybrid"
     $ApiEnabled = $true
@@ -53,20 +54,20 @@ $PingTimeoutMs = 200
 
 # Lista de puertos por defecto
 $DefaultCommonPorts = @(
-    @{Port=21; Protocol="FTP"},
-    @{Port=22; Protocol="SSH"},
-    @{Port=23; Protocol="Telnet"},
-    @{Port=25; Protocol="SMTP"},
-    @{Port=53; Protocol="DNS"},
-    @{Port=80; Protocol="HTTP"},
-    @{Port=110; Protocol="POP3"},
-    @{Port=143; Protocol="IMAP"},
-    @{Port=443; Protocol="HTTPS"},
-    @{Port=445; Protocol="SMB"},
-    @{Port=3306; Protocol="MySQL"},
-    @{Port=3389; Protocol="RDP"},
-    @{Port=5432; Protocol="PostgreSQL"},
-    @{Port=8080; Protocol="HTTP-Alt"}
+    @{Port = 21; Protocol = "FTP" },
+    @{Port = 22; Protocol = "SSH" },
+    @{Port = 23; Protocol = "Telnet" },
+    @{Port = 25; Protocol = "SMTP" },
+    @{Port = 53; Protocol = "DNS" },
+    @{Port = 80; Protocol = "HTTP" },
+    @{Port = 110; Protocol = "POP3" },
+    @{Port = 143; Protocol = "IMAP" },
+    @{Port = 443; Protocol = "HTTPS" },
+    @{Port = 445; Protocol = "SMB" },
+    @{Port = 3306; Protocol = "MySQL" },
+    @{Port = 3389; Protocol = "RDP" },
+    @{Port = 5432; Protocol = "PostgreSQL" },
+    @{Port = 8080; Protocol = "HTTP-Alt" }
 )
 
 $CommonPorts = $DefaultCommonPorts
@@ -75,7 +76,8 @@ $PortCacheFile = Join-Path -Path $PSScriptRoot -ChildPath "port_scan_cache.json"
 # Detección de Dominio
 try {
     $IsInDomain = (Get-WmiObject Win32_ComputerSystem).PartOfDomain
-} catch {
+}
+catch {
     $IsInDomain = $false
 }
 
@@ -84,10 +86,12 @@ $LastScanInfo = ""
 if (Test-Path $ScanHistoryFile) {
     try {
         $LastScanInfo = Get-Content $ScanHistoryFile -Raw -ErrorAction SilentlyContinue
-    } catch {
+    }
+    catch {
         $LastScanInfo = "No disponible"
     }
-} else {
+}
+else {
     $LastScanInfo = "Primer escaneo"
 }
 
@@ -328,9 +332,9 @@ function Get-OpenPorts {
             
             if ($TestResult) {
                 $PortResult = [PSCustomObject]@{
-                    Port = $PortInfo.Port
-                    Protocol = $PortInfo.Protocol
-                    Status = "Open"
+                    Port       = $PortInfo.Port
+                    Protocol   = $PortInfo.Protocol
+                    Status     = "Open"
                     DetectedAt = Get-Date -Format "HH:mm:ss"
                 }
                 $OpenPorts += $PortResult
@@ -426,9 +430,9 @@ function Test-PortInCache {
         if ($Age.TotalMinutes -lt $PortCacheTTLMinutes) {
             # Entrada válida, retornar datos
             return [PSCustomObject]@{
-                Port = $Entry.Port
-                Protocol = $Entry.Protocol
-                Status = $Entry.Status
+                Port       = $Entry.Port
+                Protocol   = $Entry.Protocol
+                Status     = $Entry.Status
                 DetectedAt = $Entry.DetectedAt
             }
         }
@@ -457,12 +461,12 @@ function Add-PortToCache {
     $Key = "${IpAddress}:$($PortInfo.Port)"
     
     $Cache[$Key] = @{
-        IP = $IpAddress
-        Port = $PortInfo.Port
-        Protocol = $PortInfo.Protocol
-        Status = $PortInfo.Status
+        IP          = $IpAddress
+        Port        = $PortInfo.Port
+        Protocol    = $PortInfo.Protocol
+        Status      = $PortInfo.Status
         LastScanned = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
-        DetectedAt = $PortInfo.DetectedAt
+        DetectedAt  = $PortInfo.DetectedAt
     }
 }
 
@@ -530,9 +534,9 @@ function Send-ResultsToApi {
         }
         
         $DevicesPayload += @{
-            IP = $HostObj.IP
-            MAC = $HostObj.MacAddress
-            Hostname = $HostObj.Hostname
+            IP        = $HostObj.IP
+            MAC       = $HostObj.MacAddress
+            Hostname  = $HostObj.Hostname
             OpenPorts = $PortsString
         }
     }
@@ -566,7 +570,8 @@ function Send-ResultsToApi {
                         Write-Host "   Procesados: $($Response.summary.processed) | Conflictos: $($Response.summary.conflicts) | Errores: $($Response.summary.errors)" -ForegroundColor Gray
                         $ApiSuccess = $true
                         break
-                    } else {
+                    }
+                    else {
                         Write-Warning "⚠️ La API respondió con error: $($Response.message)"
                     }
                 }
@@ -574,7 +579,8 @@ function Send-ResultsToApi {
                     $ErrorMsg = $_.Exception.Message
                     if ($attempt -eq $ApiRetries) {
                         Write-Warning "❌ Error al enviar datos a la API después de $ApiRetries intentos: $ErrorMsg"
-                    } else {
+                    }
+                    else {
                         Write-Host "   Error: $ErrorMsg" -ForegroundColor DarkYellow
                     }
                 }
@@ -614,13 +620,15 @@ function Send-ResultsToApi {
                 
                 if ($Process.ExitCode -eq 0) {
                     Write-Host "✅ Procesamiento local completado." -ForegroundColor Green
-                } else {
+                }
+                else {
                     Write-Warning "⚠️ El procesador PHP terminó con errores (Código $($Process.ExitCode))."
                     if ($ErrorOutput) {
                         Write-Warning $ErrorOutput
                     }
                 }
-            } else {
+            }
+            else {
                 Write-Warning "No se encontró el script del procesador PHP en: $PhpProcessorScript"
                 Write-Host "El archivo JSON está disponible para procesamiento manual." -ForegroundColor Gray
             }
@@ -641,7 +649,7 @@ function Test-HostConnectivity {
         PSCustomObject { IP, Status, Hostname, OS, MacAddress, Manufacturer, OpenPorts }
     #>
     param (
-        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
         [string]$IpAddress,
         [hashtable]$Cache = @{}
     )
@@ -708,13 +716,13 @@ function Test-HostConnectivity {
     }
 
     return [PSCustomObject]@{
-        IP = $IpAddress
-        Status = if ($IsActive) { "Active" } else { "Inactive" }
-        Hostname = $Hostname
-        OS = $OS
-        MacAddress = $MacAddress
+        IP           = $IpAddress
+        Status       = if ($IsActive) { "Active" } else { "Inactive" }
+        Hostname     = $Hostname
+        OS           = $OS
+        MacAddress   = $MacAddress
         Manufacturer = $Manufacturer
-        OpenPorts = $OpenPorts
+        OpenPorts    = $OpenPorts
     }
 }
 
@@ -846,9 +854,9 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                             
                             if ($Age.TotalMinutes -lt $TTL) {
                                 $Ports += [PSCustomObject]@{
-                                    Port = $Entry.Port
-                                    Protocol = $Entry.Protocol
-                                    Status = $Entry.Status
+                                    Port       = $Entry.Port
+                                    Protocol   = $Entry.Protocol
+                                    Status     = $Entry.Status
                                     DetectedAt = $Entry.DetectedAt
                                 }
                                 $Cached = $true
@@ -860,13 +868,14 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
                                 $TestResult = Test-NetConnection -ComputerName $Ip -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
                                 if ($TestResult) {
                                     $Ports += [PSCustomObject]@{
-                                        Port = $PortInfo.Port
-                                        Protocol = $PortInfo.Protocol
-                                        Status = "Open"
+                                        Port       = $PortInfo.Port
+                                        Protocol   = $PortInfo.Protocol
+                                        Status     = "Open"
                                         DetectedAt = Get-Date -Format "HH:mm:ss"
                                     }
                                 }
-                            } catch {
+                            }
+                            catch {
                                 continue
                             }
                         }
@@ -875,19 +884,20 @@ if ($PSVersionTable.PSVersion.Major -ge 7) {
             }
             
             $Ping.Dispose()
-        } catch { 
+        }
+        catch { 
             $Active = $false 
         }
         
         # Devolver objeto al hilo principal
         [PSCustomObject]@{
-            IP = $Ip
-            Status = if ($Active) { "Active" } else { "Inactive" }
-            Hostname = $HostName
-            OS = $OSDetected
-            MacAddress = $MacAddr
+            IP           = $Ip
+            Status       = if ($Active) { "Active" } else { "Inactive" }
+            Hostname     = $HostName
+            OS           = $OSDetected
+            MacAddress   = $MacAddr
             Manufacturer = $Manuf
-            OpenPorts = $Ports
+            OpenPorts    = $Ports
         }
     } -ThrottleLimit 64
 }
@@ -961,7 +971,8 @@ Write-Host "================================================================"
 try {
     $CurrentScanTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $CurrentScanTime | Out-File -FilePath $ScanHistoryFile -Encoding UTF8 -Force
-} catch {
+}
+catch {
     Write-Warning "No se pudo guardar el historial del escaneo"
 }
 
