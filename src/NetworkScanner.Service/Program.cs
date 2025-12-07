@@ -1,11 +1,9 @@
+using NetworkScanner.Shared;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace NetworkScannerService
+namespace NetworkScanner.Service
 {
-    /// <summary>
-    /// Punto de entrada del servicio de Windows
-    /// </summary>
     public class Program
     {
         public static void Main(string[] args)
@@ -13,9 +11,6 @@ namespace NetworkScannerService
             CreateHostBuilder(args).Build().Run();
         }
 
-        /// <summary>
-        /// Configura el host del servicio de Windows
-        /// </summary>
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
                 .UseWindowsService(options =>
@@ -24,13 +19,13 @@ namespace NetworkScannerService
                 })
                 .ConfigureServices((hostContext, services) =>
                 {
-                    // Configurar opciones
+                    // Bind configuration
                     services.Configure<ScannerSettings>(hostContext.Configuration.GetSection("ScannerSettings"));
 
-                    // Registrar HttpClient
+                    // Register HttpClient
                     services.AddHttpClient();
 
-                    // Registrar el servicio worker
+                    // Register Worker
                     services.AddHostedService<ScannerWorker>();
                 });
     }
