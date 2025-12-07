@@ -121,37 +121,6 @@ function Get-RemoteProtocols {
 # Intentar actualizar la lista de puertos comunes desde la API
 $RemotePortsList = Get-RemoteProtocols
 if ($RemotePortsList) {
-    # Filtramos para no tener una lista de 6000 puertos si no es necesario, 
-    # o podemos usar todos. Para rendimiento, quizás sea mejor usar los Top 100 o 1000.
-    # Por ahora, usaremos todos los que vengan (si el usuario quiere escanear todo).
-    # Pero OJO: Escanear 6000 puertos por host tardará mucho.
-    # Mantenemos la lógica de escaneo rápido, pero actualizamos la DEFINICIÓN.
-    
-    # Si queremos escanear SOLO los comunes, mantenemos la lista corta.
-    # Si queremos que el escáner use la DB para identificar, necesitamos separar
-    # "Puertos a Escanear" de "Diccionario de Protocolos".
-    
-    # Asumiremos que $CommonPorts define QUÉ escanear.
-    # Si la API devuelve 6000, escanear 6000 puertos x 254 hosts = LENTO.
-    # Estrategia: Usar la lista remota SOLO si son puertos "comunes" o si el usuario lo pide.
-    # Por seguridad, mantendremos la lista por defecto para el escaneo activo, 
-    # pero podríamos ampliarla si la API devuelve una lista curada de "Top Ports".
-    
-    # Dado que la tabla tiene TODOS (6000+), no podemos asignarlo directo a $CommonPorts 
-    # sin matar el rendimiento.
-    # Solución: Mantenemos $CommonPorts como está (o un Top 20 extendido), 
-    # pero usamos la API para *identificar* (ya lo hace el backend).
-    
-    # El usuario pidió: "que use la que esta en la nube".
-    # Interpretación: El agente debe saber qué escanear basado en la nube.
-    # Si la nube devuelve 6000, el agente escanea 6000? Probablemente no sea lo deseado por defecto.
-    
-    # Haremos un compromiso: Actualizaremos $CommonPorts con los puertos que la API marque como "esencial", "base_de_datos", "correo", etc.
-    # (Necesitaríamos que el endpoint devuelva la categoría).
-    
-    # Por ahora, para cumplir la solicitud literalmente sin romper el script:
-    # Asignaremos los primeros 50 o 100 puertos de la lista remota a $CommonPorts.
-    
     $CommonPorts = $RemotePortsList | Select-Object -First 50
     Write-Host "Lista de escaneo actualizada con los Top 50 protocolos de la nube." -ForegroundColor Gray
 }
@@ -290,7 +259,6 @@ function Get-ManufacturerFromOUI {
     # La resolución de fabricantes ahora se maneja en el backend
     return "Desconocido"
 }
-
 
 function Get-OpenPorts {
     <#
@@ -725,9 +693,8 @@ function Test-HostConnectivity {
     }
 }
 
-
 # ==============================================================================
-# SECCIÓN 3: EJECUCIÓN DEL ESCANEO
+# SECCIÓN 3: EJECUCIÓN DEL ESCANEO (SIMPLIFICADA)
 # ==============================================================================
 
 # Cargar caché de puertos
@@ -742,181 +709,20 @@ Write-Host "Objetivos generados: $($TargetIps.Count) direcciones." -ForegroundCo
 $Results = @()
 $TotalHosts = $TargetIps.Count
 
-# Detectar capacidad de paralelismo (PowerShell 7+)
-if ($PSVersionTable.PSVersion.Major -ge 7) {
-    Write-Host "Modo detectado: PARALELO (Optimizado para PS 7+)" -ForegroundColor Magenta
-    
-    # Ejecución en paralelo usando ForEach-Object -Parallel
-    # ThrottleLimit 64 permite muchos pings simultáneos
-    $Results = $TargetIps | ForEach-Object -Parallel {
-        $Ip = $_
-        $Timeout = $using:PingTimeoutMs
-        $InDomain = $using:IsInDomain
-        $PortsToScan = $using:CommonPorts
-        $PortTimeout = $using:PortScanTimeout
-        $ScanPorts = $using:PortScanEnabled
-        $Cache = $using:PortCache
-        $TTL = $using:PortCacheTTLMinutes
-        $Active = $false
-        $HostName = ""
-        $OSDetected = ""
-        $MacAddr = ""
-        $Manuf = ""
-        $Ports = @()
-        
-        try {
-            $Ping = [System.Net.NetworkInformation.Ping]::new()
-            $Reply = $Ping.Send($Ip, $Timeout)
-            $Active = ($Reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
-            
-            # Si el host está activo, intentar resolver el hostname y OS
-            if ($Active) {
-                # Capturar TTL para detección de OS
-                $Ttl = $Reply.Options.Ttl
-                
-                # Resolver hostname
-                try {
-                    $HostName = [System.Net.Dns]::GetHostEntry($Ip).HostName
-                }
-                catch {
-                    # Si no se puede resolver, usar valor por defecto
-                    $HostName = "Desconocido"
-                }
-                
-                # Detección híbrida de OS
-                if ($InDomain) {
-                    # Intentar WMI/CIM primero si estamos en dominio
-                    try {
-                        $CimSession = New-CimSession -ComputerName $Ip -ErrorAction Stop -OperationTimeoutSec 2
-                        $OS = Get-CimInstance -CimSession $CimSession -ClassName Win32_OperatingSystem -ErrorAction Stop
-                        Remove-CimSession -CimSession $CimSession -ErrorAction SilentlyContinue
-                        
-                        if ($OS.Caption) {
-                            $OSDetected = $OS.Caption -replace 'Microsoft ', ''
-                        }
-                    }
-                    catch {
-                        # Si falla CIM, usar TTL como fallback
-                        $OSDetected = ""
-                    }
-                }
-                
-                # Si no obtuvimos OS por WMI o no estamos en dominio, usar TTL
-                if ([string]::IsNullOrEmpty($OSDetected)) {
-                    # Inferir OS desde TTL
-                    if ($Ttl -le 64) {
-                        $OSDetected = "Linux/Unix"
-                    }
-                    elseif ($Ttl -le 128) {
-                        $OSDetected = "Windows"
-                    }
-                    elseif ($Ttl -le 255) {
-                        $OSDetected = "Cisco/Network Device"
-                    }
-                    else {
-                        $OSDetected = "Unknown"
-                    }
-                }
-                
-                # Obtener dirección MAC desde ARP
-                if ([string]::IsNullOrEmpty($MacAddr)) {
-                    $ArpOutput = arp -a $Ip 2>$null
-                    if ($ArpOutput) {
-                        foreach ($Line in $ArpOutput) {
-                            if ($Line -match $Ip) {
-                                if ($Line -match '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})') {
-                                    $MacAddr = $Matches[0]
-                                    break
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                if ([string]::IsNullOrEmpty($MacAddr)) {
-                    $MacAddr = $null
-                }
-                
-                # Obtener fabricante desde OUI
-                $Manuf = "Desconocido"
-                
-                # Escanear puertos si está habilitado
-                if ($ScanPorts) {
-                    foreach ($PortInfo in $PortsToScan) {
-                        # Verificar caché (lógica inline para paralelismo)
-                        $Key = "${Ip}:${PortInfo.Port}"
-                        $Cached = $false
-                        
-                        if ($Cache.ContainsKey($Key)) {
-                            $Entry = $Cache[$Key]
-                            $LastScanned = [DateTime]::Parse($Entry.LastScanned)
-                            $Age = (Get-Date) - $LastScanned
-                            
-                            if ($Age.TotalMinutes -lt $TTL) {
-                                $Ports += [PSCustomObject]@{
-                                    Port       = $Entry.Port
-                                    Protocol   = $Entry.Protocol
-                                    Status     = $Entry.Status
-                                    DetectedAt = $Entry.DetectedAt
-                                }
-                                $Cached = $true
-                            }
-                        }
-                        
-                        if (-not $Cached) {
-                            try {
-                                $TestResult = Test-NetConnection -ComputerName $Ip -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
-                                if ($TestResult) {
-                                    $Ports += [PSCustomObject]@{
-                                        Port       = $PortInfo.Port
-                                        Protocol   = $PortInfo.Protocol
-                                        Status     = "Open"
-                                        DetectedAt = Get-Date -Format "HH:mm:ss"
-                                    }
-                                }
-                            }
-                            catch {
-                                continue
-                            }
-                        }
-                    }
-                }
-            }
-            
-            $Ping.Dispose()
-        }
-        catch { 
-            $Active = $false 
-        }
-        
-        # Devolver objeto al hilo principal
-        [PSCustomObject]@{
-            IP           = $Ip
-            Status       = if ($Active) { "Active" } else { "Inactive" }
-            Hostname     = $HostName
-            OS           = $OSDetected
-            MacAddress   = $MacAddr
-            Manufacturer = $Manuf
-            OpenPorts    = $Ports
-        }
-    } -ThrottleLimit 64
-}
-else {
-    Write-Host "Modo detectado: SECUENCIAL (Compatibilidad PS 5.1)" -ForegroundColor Yellow
-    Write-Host "Nota: Actualice a PowerShell 7 para mayor velocidad." -ForegroundColor DarkGray
-    
-    # Ejecución secuencial tradicional
-    $Counter = 0
-    foreach ($Ip in $TargetIps) {
-        $Counter++
-        if ($Counter % 10 -eq 0) {
-            Write-Progress -Activity "Escaneando red..." -Status "Procesando $Ip" -PercentComplete (($Counter / $TotalHosts) * 100)
-        }
-        
-        $Results += Test-HostConnectivity -IpAddress $Ip -Cache $PortCache
+# Modo secuencial simplificado (eliminamos el modo paralelo para evitar problemas)
+Write-Host "Modo detectado: SECUENCIAL" -ForegroundColor Yellow
+
+# Ejecución secuencial tradicional
+$Counter = 0
+foreach ($Ip in $TargetIps) {
+    $Counter++
+    if ($Counter % 10 -eq 0) {
+        Write-Progress -Activity "Escaneando red..." -Status "Procesando $Ip" -PercentComplete (($Counter / $TotalHosts) * 100)
     }
-    Write-Progress -Activity "Escaneando red..." -Completed
+    
+    $Results += Test-HostConnectivity -IpAddress $Ip -Cache $PortCache
 }
+Write-Progress -Activity "Escaneando red..." -Completed
 
 # Actualizar caché con resultados nuevos
 Write-Host "Actualizando caché de puertos..." -ForegroundColor Yellow
