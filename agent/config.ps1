@@ -16,7 +16,7 @@ $ApiRetries = 3
 $ApiRetryDelay = 2  # segundos entre reintentos
 
 # Configuración de Subred
-$SubnetPrefix = "192.168.1."
+$SubnetPrefix = "192.168.100."
 
 # Configuración de Escaneo de Puertos
 $PortScanEnabled = $true
