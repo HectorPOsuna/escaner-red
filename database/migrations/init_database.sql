@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS protocolos (
     id_protocolo INT AUTO_INCREMENT PRIMARY KEY COMMENT 'ID único del protocolo',
     numero INT NOT NULL COMMENT 'Número de puerto estándar (ej. 80, 443)',
     nombre VARCHAR(50) NOT NULL COMMENT 'Nombre del protocolo (ej. HTTP, SSH)',
-    categoria ENUM('seguro', 'inseguro', 'esencial', 'base_de_datos', 'correo', 'otro') 
+    categoria ENUM('seguro', 'inseguro', 'precaucion', 'esencial', 'base_de_datos', 'correo', 'otro') 
         DEFAULT 'otro' NOT NULL COMMENT 'Clasificación de seguridad o tipo de servicio',
     descripcion TEXT NULL COMMENT 'Descripción detallada del protocolo',
     CONSTRAINT uk_protocolo_numero UNIQUE (numero),
@@ -152,8 +152,9 @@ INSERT IGNORE INTO protocolos (numero, nombre, categoria, descripcion) VALUES
 (53, 'DNS', 'esencial', 'Domain Name System'),
 (80, 'HTTP', 'inseguro', 'Hypertext Transfer Protocol'),
 (443, 'HTTPS', 'seguro', 'Hypertext Transfer Protocol Secure'),
+(445, 'SMB', 'precaucion', 'Server Message Block'),
 (3306, 'MySQL', 'base_de_datos', 'MySQL Database'),
-(3389, 'RDP', 'esencial', 'Remote Desktop Protocol'),
+(3389, 'RDP', 'precaucion', 'Remote Desktop Protocol'),
 (5432, 'PostgreSQL', 'base_de_datos', 'PostgreSQL Database');
 
 SET FOREIGN_KEY_CHECKS = 1;

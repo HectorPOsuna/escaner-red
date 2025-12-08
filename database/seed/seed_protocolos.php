@@ -54,8 +54,10 @@ function seedProtocolos() {
                 $categoria = 'otro';
                 
                 // Lógica simple de categorización
-                if (in_array($portNumber, [80, 443, 8080])) $categoria = 'web';
-                elseif (in_array($portNumber, [22, 3389])) $categoria = 'administracion';
+                if (in_array($portNumber, [80, 8080])) $categoria = 'inseguro';
+                elseif (in_array($portNumber, [443])) $categoria = 'seguro';
+                elseif (in_array($portNumber, [22])) $categoria = 'seguro'; // SSH
+                elseif (in_array($portNumber, [3389, 5900, 445])) $categoria = 'precaucion'; // RDP, VNC, SMB
                 elseif (in_array($portNumber, [3306, 5432, 1433])) $categoria = 'base_de_datos';
                 elseif (in_array($portNumber, [25, 110, 143, 587])) $categoria = 'correo';
 

@@ -28,7 +28,7 @@ else {
     # Valores por defecto si no existe config.ps1
     $OperationMode = "hybrid"
     $ApiEnabled = $true
-    $ApiUrl = "http://localhost/escaner-red/server/api/receive.php"
+    $ApiUrl = "https://localhost/escaner-red/server/api/receive.php"
     $ApiTimeout = 10
     $ApiRetries = 3
     $ApiRetryDelay = 2
