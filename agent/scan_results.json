@@ -1,0 +1,155 @@
+﻿{
+    "subnet":  "192.168.100.0/24",
+    "hosts":  [
+                  {
+                      "open_ports":  [
+                                         {
+                                             "port":  25,
+                                             "protocol":  "SMTP",
+                                             "detected_at":  "01:32:58"
+                                         },
+                                         {
+                                             "port":  53,
+                                             "protocol":  "DNS",
+                                             "detected_at":  "01:32:58"
+                                         },
+                                         {
+                                             "port":  80,
+                                             "protocol":  "HTTP",
+                                             "detected_at":  "01:32:58"
+                                         },
+                                         {
+                                             "port":  110,
+                                             "protocol":  "POP3",
+                                             "detected_at":  "01:32:58"
+                                         },
+                                         {
+                                             "port":  143,
+                                             "protocol":  "IMAP",
+                                             "detected_at":  "01:32:58"
+                                         }
+                                     ],
+                      "manufacturer":  "Desconocido",
+                      "mac":  "68-E2-09-F3-E7-2F",
+                      "hostname":  "Desconocido",
+                      "ip":  "192.168.100.1",
+                      "os":  "Linux/Unix"
+                  },
+                  {
+                      "open_ports":  [
+                                         {
+                                             "port":  25,
+                                             "protocol":  "SMTP",
+                                             "detected_at":  "01:33:23"
+                                         },
+                                         {
+                                             "port":  110,
+                                             "protocol":  "POP3",
+                                             "detected_at":  "01:33:27"
+                                         },
+                                         {
+                                             "port":  143,
+                                             "protocol":  "IMAP",
+                                             "detected_at":  "01:33:27"
+                                         }
+                                     ],
+                      "manufacturer":  "Desconocido",
+                      "mac":  "D0-A4-6F-65-D0-15",
+                      "hostname":  "Desconocido",
+                      "ip":  "192.168.100.3",
+                      "os":  "Linux/Unix"
+                  },
+                  {
+                      "open_ports":  [
+                                         {
+                                             "port":  25,
+                                             "protocol":  "SMTP",
+                                             "detected_at":  "01:33:53"
+                                         },
+                                         {
+                                             "port":  110,
+                                             "protocol":  "POP3",
+                                             "detected_at":  "01:33:58"
+                                         },
+                                         {
+                                             "port":  143,
+                                             "protocol":  "IMAP",
+                                             "detected_at":  "01:33:58"
+                                         }
+                                     ],
+                      "manufacturer":  "Desconocido",
+                      "mac":  "9C-2F-4E-34-31-CB",
+                      "hostname":  "Desconocido",
+                      "ip":  "192.168.100.7",
+                      "os":  "Linux/Unix"
+                  },
+                  {
+                      "open_ports":  [
+                                         {
+                                             "port":  25,
+                                             "protocol":  "SMTP",
+                                             "detected_at":  "01:34:29"
+                                         },
+                                         {
+                                             "port":  110,
+                                             "protocol":  "POP3",
+                                             "detected_at":  "01:34:33"
+                                         },
+                                         {
+                                             "port":  143,
+                                             "protocol":  "IMAP",
+                                             "detected_at":  "01:34:33"
+                                         }
+                                     ],
+                      "manufacturer":  "Desconocido",
+                      "mac":  "D0-A4-6F-65-BD-9D",
+                      "hostname":  "Desconocido",
+                      "ip":  "192.168.100.18",
+                      "os":  "Linux/Unix"
+                  },
+                  {
+                      "open_ports":  [
+                                         {
+                                             "port":  25,
+                                             "protocol":  "SMTP",
+                                             "detected_at":  "01:35:20"
+                                         },
+                                         {
+                                             "port":  110,
+                                             "protocol":  "POP3",
+                                             "detected_at":  "01:35:31"
+                                         },
+                                         {
+                                             "port":  143,
+                                             "protocol":  "IMAP",
+                                             "detected_at":  "01:35:31"
+                                         }
+                                     ],
+                      "manufacturer":  "Desconocido",
+                      "mac":  "20-E2-A8-29-3D-C4",
+                      "hostname":  "Desconocido",
+                      "ip":  "192.168.100.54",
+                      "os":  "Linux/Unix"
+                  },
+                  {
+                      "open_ports":  [
+                                         {
+                                             "port":  445,
+                                             "protocol":  "SMB",
+                                             "detected_at":  "01:36:17"
+                                         },
+                                         {
+                                             "port":  5432,
+                                             "protocol":  "PostgreSQL",
+                                             "detected_at":  "01:36:22"
+                                         }
+                                     ],
+                      "manufacturer":  "Desconocido",
+                      "mac":  null,
+                      "hostname":  "DESKTOP-61NJKER",
+                      "ip":  "192.168.100.81",
+                      "os":  "Windows"
+                  }
+              ],
+    "scan_timestamp":  "2025-12-08T01:38:03"
+}
