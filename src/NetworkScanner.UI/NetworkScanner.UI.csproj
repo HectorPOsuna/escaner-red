@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="..\..\docs\favicon.ico">
+    <Resource Include="..\..\docs\app_icon.ico">
       <Link>app_icon.ico</Link>
     </Resource>
   </ItemGroup>

@@ -1,3 +1,7 @@
+param (
+    [string]$ConfigFile = ""
+)
+
 <#
 .SYNOPSIS
     Agente de Monitoreo de Red - Escáner de IPs
@@ -9,7 +13,7 @@
     Genera dos archivos de salida: active_ips.txt y inactive_ips.txt.
 
 .NOTES
-    Versión: 1.0.0
+    Versión: 1.1.0
     Autor: Monitor de Actividad de Protocolos de Red Team
     Fecha: 2025
 #>
@@ -18,14 +22,54 @@
 # SECCIÓN 1: CONFIGURACIÓN
 # ==============================================================================
 
-# Cargar configuración externa si existe
-$ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "config.ps1"
+# Variables de progreso
+$EnableProgress = $false
+$ProgressFile = ""
+
+# Determinar archivo de configuración
+if ([string]::IsNullOrEmpty($ConfigFile)) {
+    $ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "config.ps1"
+}
+
+# Cargar configuración
 if (Test-Path $ConfigFile) {
-    . $ConfigFile
-    Write-Host "[OK] Configuración cargada desde config.ps1" -ForegroundColor Green
+    if ($ConfigFile.EndsWith(".json")) {
+        # Cargar configuración desde JSON (Nueva UI)
+        try {
+            $JsonConfig = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+            
+            if ($JsonConfig.SubnetPrefix) { $SubnetPrefix = $JsonConfig.SubnetPrefix }
+            if ($JsonConfig.OperationMode) { $OperationMode = $JsonConfig.OperationMode }
+            if ($JsonConfig.EnableProgress) { $EnableProgress = $JsonConfig.EnableProgress }
+            if ($JsonConfig.ProgressFile) { $ProgressFile = $JsonConfig.ProgressFile }
+            
+            # Valores por defecto para el resto si no vienen en JSON
+            $ApiEnabled = $true
+            $ApiUrl = "http://dsantana.fimaz.uas.edu.mx/server/api/receive.php"
+            $ApiTimeout = 10
+            $ApiRetries = 3
+            $ApiRetryDelay = 2
+            $PortScanEnabled = $true
+            $PortScanTimeout = 500
+            $PortCacheTTLMinutes = 10
+            $ScanResultsFile = "scan_results.json"
+            $PhpProcessorScript = "..\server\cron_process.php"
+            $PhpExecutable = "php"
+            
+            Write-Host "[OK] Configuración JSON cargada desde $ConfigFile" -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "Error al leer config JSON: $_"
+        }
+    }
+    else {
+        # Cargar configuración desde script PowerShell (Legacy)
+        . $ConfigFile
+        Write-Host "[OK] Configuración cargada desde config.ps1" -ForegroundColor Green
+    }
 }
 else {
-    # Valores por defecto si no existe config.ps1
+    # Valores por defecto si no existe config
     $OperationMode = "hybrid"
     $ApiEnabled = $true
     $ApiUrl = "https://localhost/escaner-red/server/api/receive.php"
@@ -39,7 +83,7 @@ else {
     $ScanResultsFile = "scan_results.json"
     $PhpProcessorScript = "..\server\cron_process.php"
     $PhpExecutable = "php"
-    Write-Host "[ADVERTENCIA] Usando configuración por defecto (config.ps1 no encontrado)" -ForegroundColor Yellow
+    Write-Host "[ADVERTENCIA] Usando configuración por defecto (config no encontrado)" -ForegroundColor Yellow
 }
 
 # Archivos de salida
@@ -427,6 +471,21 @@ Write-Host "Modo detectado: SECUENCIAL" -ForegroundColor Yellow
 $Counter = 0
 foreach ($Ip in $TargetIps) {
     $Counter++
+    
+    # Reporte de progreso para UI (JSON)
+    if ($EnableProgress -and $ProgressFile) {
+        try {
+            $ProgressData = @{
+                Current    = $Counter
+                Total      = $TotalHosts
+                Percentage = [math]::Round(($Counter / $TotalHosts) * 100)
+                CurrentIP  = $Ip
+            }
+            $ProgressData | ConvertTo-Json -Depth 2 | Out-File -FilePath $ProgressFile -Encoding UTF8 -Force
+        }
+        catch { /* Ignorar errores de escritura */ }
+    }
+
     if ($Counter % 10 -eq 0) {
         Write-Progress -Activity "Escaneando red..." -Status "Procesando $Ip" -PercentComplete (($Counter / $TotalHosts) * 100)
     }

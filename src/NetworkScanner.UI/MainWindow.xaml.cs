@@ -1,185 +1,140 @@
 ﻿using System;
-using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Threading;
-using NetworkScanner.Shared;
 
 namespace NetworkScanner.UI
 {
     public partial class MainWindow : Window
     {
-        private DispatcherTimer _timer;
-        private string _appSettingsPath = "appsettings.json";
+        private readonly ScanController _controller;
+        private const string AppSettingsFile = "appsettings.json";
 
         public MainWindow()
         {
             InitializeComponent();
+            _controller = new ScanController();
             
-            // Use PathResolver to find appsettings.json
-            _appSettingsPath = PathResolver.GetServiceConfigPath() ?? "appsettings.json";
+            // Suscribirse a eventos
+            _controller.OnProgressUpdated += Controller_OnProgressUpdated;
+            _controller.OnScanCompleted += Controller_OnScanCompleted;
 
-            LoadConfig();
-            UpdateStatus();
-
-            _timer = new DispatcherTimer();
-            _timer.Interval = TimeSpan.FromSeconds(2);
-            _timer.Tick += (s, e) => UpdateStatus();
-            _timer.Start();
-
-            // Cargar logs
-            LoadLogs();
+            LoadSettings();
         }
 
-        private void UpdateStatus()
+        private void LoadSettings()
         {
-            string status = ServiceManager.GetStatus();
-            StatusText.Text = status;
-
-            switch (status)
+            try
             {
-                case "Running":
-                    StatusIndicator.Fill = Brushes.Green;
-                    BtnStart.IsEnabled = false;
-                    BtnStop.IsEnabled = true;
-                    BtnInstall.IsEnabled = false;
-                    BtnUninstall.IsEnabled = false; // Detener primero
-                    break;
-                case "Stopped":
-                    StatusIndicator.Fill = Brushes.Red;
-                    BtnStart.IsEnabled = true;
-                    BtnStop.IsEnabled = false;
-                    BtnInstall.IsEnabled = false;
-                    BtnUninstall.IsEnabled = true;
-                    break;
-                case "No Instalado":
-                    StatusIndicator.Fill = Brushes.Gray;
-                    BtnStart.IsEnabled = false;
-                    BtnStop.IsEnabled = false;
-                    BtnInstall.IsEnabled = true;
-                    BtnUninstall.IsEnabled = false;
-                    break;
-                default:
-                    StatusIndicator.Fill = Brushes.Yellow;
-                    break;
-            }
-        }
-
-        private void LoadConfig()
-        {
-            if (File.Exists(_appSettingsPath))
-            {
-                try
+                // Intentar cargar subnet guardada
+                if (File.Exists(AppSettingsFile))
                 {
-                    string json = File.ReadAllText(_appSettingsPath);
+                    string json = File.ReadAllText(AppSettingsFile);
                     using (JsonDocument doc = JsonDocument.Parse(json))
                     {
-                        var settings = doc.RootElement.GetProperty("ScannerSettings");
-                        TxtInterval.Text = settings.GetProperty("IntervalMinutes").GetInt32().ToString();
-                        TxtApiUrl.Text = settings.GetProperty("ApiUrl").GetString();
-                        TxtScriptPath.Text = settings.GetProperty("ScriptPath").GetString();
+                        if (doc.RootElement.TryGetProperty("ScannerSettings", out var settings))
+                        {
+                            if (settings.TryGetProperty("SubnetPrefix", out var subnet))
+                            {
+                                TxtSubnet.Text = subnet.GetString();
+                            }
+                        }
                     }
                 }
-                catch { }
             }
+            catch { /* Ignorar errores de carga */ }
         }
 
-        private void BtnSaveConfig_Click(object sender, RoutedEventArgs e)
+        private void SaveSettings(string subnet)
         {
             try
             {
-                string json = File.Exists(_appSettingsPath) ? File.ReadAllText(_appSettingsPath) : "{}";
+                // Guardar configuración simple persistente
+                var simpleConfig = new 
+                { 
+                    ScannerSettings = new { SubnetPrefix = subnet } 
+                };
                 
-                var newSettings = new ScannerSettings
-                {
-                    IntervalMinutes = int.Parse(TxtInterval.Text),
-                    ApiUrl = TxtApiUrl.Text,
-                    ScriptPath = TxtScriptPath.Text
-                };
-
-                var root = new { 
-                    ScannerSettings = newSettings,
-                    Logging = new { LogLevel = new { Default = "Information" } } 
-                };
-
-                File.WriteAllText(_appSettingsPath, JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true }));
-                MessageBox.Show("Configuración guardada. Reinicia el servicio para aplicar cambios.", "Éxito");
+                string json = JsonSerializer.Serialize(simpleConfig, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(AppSettingsFile, json);
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error al guardar: {ex.Message}", "Error");
-            }
+            catch { /* Ignorar */ }
         }
 
-        private void LoadLogs()
+        private async void BtnScan_Click(object sender, RoutedEventArgs e)
         {
-            // Use PathResolver for logs directory
-            string logDir = PathResolver.GetLogsDirectory();
-            if (Directory.Exists(logDir))
+            string subnet = TxtSubnet.Text.Trim();
+            
+            // Validación básica
+            if (string.IsNullOrWhiteSpace(subnet) || subnet.Split('.').Length < 3)
             {
-                var files = Directory.GetFiles(logDir, "*.log");
-                if (files.Length > 0)
-                {
-                    Array.Sort(files);
-                    string lastLog = files[files.Length - 1];
-                    try
-                    {
-                         string[] lines = File.ReadAllLines(lastLog);
-                         LogOutput.Text = string.Join(Environment.NewLine, lines);
-                         LogOutput.ScrollToEnd();
-                    }
-                    catch { }
-                }
+                MessageBox.Show("Por favor ingrese un prefijo de subred válido (ej: 192.168.100.)", "Error de Validación", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
-        }
 
-        private void BtnInstall_Click(object sender, RoutedEventArgs e)
-        {
+            // Preparar UI
+            BtnScan.IsEnabled = false;
+            BtnScan.Content = "ESCANEANDO...";
+            ScanProgress.Value = 0;
+            ProgressPercentage.Text = "0%";
+            StatusText.Text = "Iniciando escaneo...";
+            StatusText.Foreground = Brushes.Orange;
+            ResultSummary.Text = "Escaneo en progreso. Por favor espere...";
+            
+            // Guardar configuración
+            SaveSettings(subnet);
+
+            // Determinar modo
+            bool isManual = RbManual.IsChecked == true;
+
             try
             {
-                // Use centralized path resolver
-                string? serviceExe = PathResolver.GetServiceExecutablePath();
-                
-                if (serviceExe == null)
-                {
-                    MessageBox.Show(
-                        "No se encuentra el ejecutable del servicio.\n\n" +
-                        "Ubicaciones buscadas:\n" +
-                        "- C:\\Program Files\\NetworkScanner\\Service\\NetworkScanner.Service.exe\n" +
-                        "- Directorio de la UI\n" +
-                        "- Directorio padre\\Service\\\n" +
-                        "- Entorno de desarrollo\n\n" +
-                        "Asegúrate de que el servicio esté correctamente instalado.",
-                        "Error",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                    return;
-                }
-
-                ServiceManager.InstallService(serviceExe);
-                MessageBox.Show(
-                    $"Servicio instalado correctamente.\n\nRuta: {serviceExe}",
-                    "Éxito",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-                UpdateStatus();
+                await _controller.StartScanAsync(subnet, isManual);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error de instalación: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusText.Text = "Error al iniciar";
+                StatusText.Foreground = Brushes.Red;
+                ResultSummary.Text = $"Ocurrió un error: {ex.Message}";
+                BtnScan.IsEnabled = true;
+                BtnScan.Content = "INICIAR ESCANEO";
             }
         }
 
-        private void BtnUninstall_Click(object sender, RoutedEventArgs e)
+        private void Controller_OnProgressUpdated(ScanProgress progress)
         {
-            ServiceManager.UninstallService();
-            MessageBox.Show("Comando de desinstalación enviado.", "Info");
+            // Actualizar UI en el hilo principal
+            Dispatcher.Invoke(() =>
+            {
+                ScanProgress.Value = progress.Percentage;
+                ProgressPercentage.Text = $"{progress.Percentage}%";
+                DetailText.Text = $"{progress.Current} / {progress.Total} IPs";
+                
+                if (!string.IsNullOrEmpty(progress.CurrentIP))
+                {
+                    StatusText.Text = $"Escaneando {progress.CurrentIP}...";
+                }
+            });
         }
 
-        private void BtnStart_Click(object sender, RoutedEventArgs e) { ServiceManager.StartService(); }
-        private void BtnStop_Click(object sender, RoutedEventArgs e) { ServiceManager.StopService(); }
+        private void Controller_OnScanCompleted()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                BtnScan.IsEnabled = true;
+                BtnScan.Content = "INICIAR ESCANEO";
+                
+                StatusText.Text = "Escaneo Completado";
+                StatusText.Foreground = Brushes.Green;
+                ScanProgress.Value = 100;
+                ProgressPercentage.Text = "100%";
+                
+                ResultSummary.Text = $"Escaneo finalizado exitosamente.\n\n" +
+                                     $"Fecha: {DateTime.Now}\n" +
+                                     $"Modo: {(RbManual.IsChecked == true ? "Manual" : "Monitoreo")}\n" +
+                                     $"Los resultados han sido procesados internamente.";
+            });
+        }
     }
 }
