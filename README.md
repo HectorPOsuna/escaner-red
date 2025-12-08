@@ -1,138 +1,131 @@
 # Escáner de Red y Monitor de Conflictos
 
-Sistema integral de monitoreo de red que combina un potente agente de escaneo en PowerShell con un backend en Node.js para detectar dispositivos, identificar fabricantes y alertar sobre conflictos de IP/MAC en tiempo real.
+Sistema integral de monitoreo de red que combina un potente agente de escaneo en PowerShell con un backend en **PHP** para detectar dispositivos, identificar fabricantes y alertar sobre conflictos de IP/MAC en tiempo real.
 
 ## 🚀 Características Principales
 
-*   **Escaneo Inteligente**: Agente PowerShell optimizado con ejecución en paralelo y caché de puertos (TTL 10 min) para reducir el tráfico de red.
-*   **Detección Híbrida**: Identificación de Sistema Operativo mediante WMI (Windows Domain) y análisis de TTL (Time-To-Live).
-*   **Validación de Conflictos**: El backend detecta automáticamente:
+*   **Escaneo Inteligente**: Agente PowerShell optimizado con ejecución en paralelo y caché de puertos.
+*   **Detección Híbrida**: Identificación de Sistema Operativo mediante WMI (Windows Domain) y análisis de TTL.
+*   **Backend PHP Eficiente**: Procesamiento asíncrono mediante scripts programados (Cron/Task Scheduler) o API REST.
+*   **Validación de Conflictos**: Detecta automáticamente:
     *   **IP Duplicada**: Misma IP en diferentes Hostnames/MACs.
     *   **MAC Duplicada**: Misma MAC en diferentes Hostnames.
-*   **Base de Datos de Fabricantes**: Identificación automática de fabricantes usando una base de datos local con más de **38,000 registros OUI** oficiales del IEEE.
-*   **Historial de Protocolos**: Registro detallado de puertos y servicios abiertos por dispositivo.
+*   **Base de Datos de Fabricantes**: Identificación automática usando seeders locales (OUI IEEE).
 
-## 🏗️ Arquitectura
+## 🏗️ Arquitectura y Flujo de Datos
+
+El sistema funciona desacoplando el escaneo (Agente) del procesamiento (Servidor).
 
 ```mermaid
 graph TD
     subgraph "Agente (Cliente)"
-        A[NetworkScanner.ps1] -->|ICMP/TCP| B(Red Local)
-        A -->|Cache Local| C[port_scan_cache.json]
+        A[NetworkScanner.ps1] -->|1. Escanea Red| B(Red Local)
+        A -->|2. Genera| C[scan_results.json]
     end
 
-    subgraph "Servidor (Backend)"
-        A -->|HTTP POST JSON| D{API Node.js}
-        D -->|Validación| E(Lógica de Conflictos)
-        E -->|Persistencia| F[(MySQL Database)]
+    subgraph "Servidor (Linux/Windows)"
+        D[cron_process.php] -->|3. Lee/Consume| C
+        D -->|4. Procesa y Valida| E(Lógica de Conflictos)
+        E -->|5. Persiste| F[(MySQL Database)]
     end
 
     subgraph "Base de Datos"
         F --> G[Tabla: equipos]
         F --> H[Tabla: conflictos]
         F --> I[Tabla: fabricantes]
-        F --> J[Tabla: protocolos]
     end
 ```
 
+1.  **Agente**: Ejecuta el escaneo y deposita los resultados en un archivo JSON en una ruta compartida o accesible por el servidor.
+2.  **Cron Process**: Un script PHP programado (`cron_process.php`) verifica periódicamente si hay nuevos archivos de resultados, los procesa e inserta en la base de datos, moviendo el archivo procesado al finalizar.
+
 ## 🛠️ Requisitos del Sistema
 
-*   **Agente**: Windows con PowerShell 5.1 o superior (Recomendado PowerShell 7+).
-*   **Backend**: Node.js v14+.
-*   **Base de Datos**: MySQL 8.0+.
+*   **Agente**:
+    *   Windows con PowerShell 5.1+ (Recomendado PowerShell 7+ para paralelismo).
+    *   (Opcional) Linux con PowerShell Core instalado.
+*   **Backend (Servidor)**:
+    *   PHP 7.4 o superior.
+    *   Extensiones PHP: `php-pdo`, `php-mysql`, `php-json`.
+*   **Base de Datos**:
+    *   MySQL 8.0 o MariaDB equivalente.
 
-## 📦 Guía de Instalación y Despliegue
+## 📦 Guía de Instalación y Configuración
 
-Sigue estos pasos para desplegar el sistema completo en un nuevo entorno.
+### 1. Configuración de Base de Datos y Entorno
 
-### 1. Configuración de Base de Datos
+1.  **Crear Base de Datos**:
+    Crea una base de datos vacía en MySQL (ej. `escaner_red`).
 
-1.  Asegúrate de tener MySQL corriendo y crea una base de datos (ej. `escaner_red`).
-2.  Navega al directorio `database`:
-    ```bash
-    cd database
-    npm install
+2.  **Configurar Variables de Entorno (.env)**:
+    En la raíz del proyecto, crea un archivo `.env` basado en el siguiente ejemplo. **Es crucial para enlazar la base de datos**.
+
+    ```ini
+    # .env
+    DB_HOST=localhost
+    DB_PORT=3306
+    DB_USER=tu_usuario
+    DB_PASSWORD=tu_contraseña
+    DB_NAME=escaner_red
     ```
-3.  Crea un archivo `.env` en la raíz del proyecto con tus credenciales (ver `.env.example`).
-4.  Inicializa las tablas:
-    ```bash
-    npm run init-db
-    ```
-5.  (Opcional) Poblar la base de datos de fabricantes (descarga ~4MB de datos IEEE):
-    ```bash
-    npm run seed-oui
-    ```
 
-### 2. Configuración del Backend (Servidor)
-
-1.  Navega al directorio `server`:
-    ```bash
-    cd server
-    npm install
-    ```
-2.  Inicia el servidor:
-    ```bash
-    # Modo producción
-    npm start
+3.  **Inicializar Esquema y Datos**:
+    Ejecuta el script de inicialización PHP desde la carpeta root o `database`:
     
-    # Modo desarrollo
-    npm run dev
+    ```bash
+    php database/init_db.php
     ```
-    *El servidor escuchará por defecto en el puerto 3000.*
+    *Esto creará las tablas y poblará los datos iniciales de fabricantes y protocolos.*
 
-### 3. Ejecución del Agente (Escáner)
+### 2. Configuración del Cron (Linux)
 
-1.  Abre el script `agent/NetworkScanner.ps1`.
-2.  Verifica la configuración en la sección superior:
-    ```powershell
-    $SubnetPrefix = "192.168.1."       # Tu subred
-    $ApiUrl = "http://localhost:3000/api/scan-results" # URL del backend
+Para que el sistema procese los resultados automáticamente, debes configurar una tarea programada (Cron Job) que ejecute el procesador PHP.
+
+1.  Abre el editor de crontab:
+    ```bash
+    crontab -e
     ```
-3.  Ejecuta el script:
+
+2.  Agrega la siguiente línea al final del archivo para ejecutar el script cada minuto:
+
+    ```cron
+    # Ejecutar procesador de escáner cada minuto
+    * * * * * /usr/bin/php /ruta/absoluta/a/escaner-red/server/cron_process.php >> /ruta/absoluta/a/escaner-red/logs/cron.log 2>&1
+    ```
+
+    *   **Nota**: Asegúrate de cambiar `/ruta/absoluta/a/escaner-red/` por la ruta real donde clonaste el repositorio.
+    *   Crea la carpeta `logs` si no existe para capturar la salida.
+
+### 3. Ejecución del Agente
+
+El `NetworkScanner.ps1` debe configurarse para guardar el archivo JSON donde el Cron pueda leerlo.
+
+1.  Edita `agent/NetworkScanner.ps1` (o crea `agent/config.ps1`) y ajusta las rutas si es necesario. Por defecto busca `../server/cron_process.php` relativo al agente.
+2.  Ejecuta el escáner:
     ```powershell
+    cd agent
     .\NetworkScanner.ps1
     ```
+3.  Al finalizar, generará `agent/scan_results.json`.
+4.  En el siguiente minuto, el Cron de Linux detectará el archivo, lo procesará y lo renombrará a `.processed`.
 
-## ⚙️ Configuración
+## 📂 Archivos Clave para el Funcionamiento
 
-### Variables de Entorno (.env)
-Ubicado en la raíz del proyecto:
+*   **`.env`**: Archivo de configuración maestro. Aquí se definen las credenciales de la BD. Si este archivo falla o no existe, `db.php` no podrá conectar.
+*   **`server/cron_process.php`**: El "cerebro" del backend. Es el script que debes poner en Crontab. Busca el archivo JSON, lo decodifica y llama a la lógica de guardado.
+*   **`server/db.php`**: Manejador de conexión a base de datos. Lee el `.env`.
+*   **`server/ScanProcessor.php`**: Contiene la lógica de negocio para comparar datos nuevos con existentes y detectar conflictos.
+*   **`agent/scan_results.json`**: El archivo "puente" entre el Agente y el Servidor.
 
-```env
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=usuario
-DB_PASSWORD=contraseña
-DB_NAME=escaner_red
-PORT=3000 # Puerto del servidor backend
-```
+## 🚨 Solución de Problemas Comunes
 
-### Configuración del Agente (PowerShell)
-Variables modificables en `NetworkScanner.ps1`:
-
-*   `$SubnetPrefix`: Prefijo de la red a escanear (ej. "10.0.0.").
-*   `$PingCount`: Número de pings por host.
-*   `$PortScanEnabled`: `$true` para escanear puertos.
-*   `$PortCacheTTLMinutes`: Tiempo de vida del caché de puertos (default: 10).
-*   `$EnableApiExport`: `$true` para enviar datos al backend.
-
-## 🚨 Solución de Problemas常见
-
-*   **Error de ejecución de scripts en PowerShell**:
-    Ejecuta `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` para permitir scripts locales.
-*   **Error de conexión a MySQL**:
-    Verifica que el usuario tenga permisos y que el archivo `.env` esté en la raíz del proyecto.
-*   **El escáner es lento**:
-    Asegúrate de usar PowerShell 7+ para aprovechar el paralelismo (`ForEach-Object -Parallel`).
-
-## 🤝 Contribución
-
-1.  Fork del repositorio.
-2.  Crea tu rama (`git checkout -b feature/AmazingFeature`).
-3.  Commit de tus cambios (`git commit -m 'Add some AmazingFeature'`).
-4.  Push a la rama (`git push origin feature/AmazingFeature`).
-5.  Abre un Pull Request.
+*   **El script de Cron no hace nada**:
+    *   Verifica los permisos de lectura/escritura en la carpeta `agent/`. El usuario de Linux que ejecuta el cron debe poder renombrar el archivo JSON.
+    *   Revisa el log: `tail -f logs/cron.log`.
+*   **Error "Connection refused" en BD**:
+    *   Revisa `DB_HOST` en `.env`. Si usas Docker o WSL, `localhost` podría no ser correcto (prueba `127.0.0.1` o la IP del host).
+*   **Powershell Script Execution Disabled**:
+    *   Ejecuta `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` en Windows.
 
 ## 📄 Licencia
-
-Distribuido bajo la licencia MIT. Ver `LICENSE` para más información.
+Distribuido bajo licencia MIT.
