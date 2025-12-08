@@ -22,7 +22,7 @@
 $ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "config.ps1"
 if (Test-Path $ConfigFile) {
     . $ConfigFile
-    Write-Host "✅ Configuración cargada desde config.ps1" -ForegroundColor Green
+    Write-Host "[OK] Configuración cargada desde config.ps1" -ForegroundColor Green
 }
 else {
     # Valores por defecto si no existe config.ps1
@@ -39,7 +39,7 @@ else {
     $ScanResultsFile = "scan_results.json"
     $PhpProcessorScript = "..\server\cron_process.php"
     $PhpExecutable = "php"
-    Write-Host "⚠️  Usando configuración por defecto (config.ps1 no encontrado)" -ForegroundColor Yellow
+    Write-Host "[ADVERTENCIA] Usando configuración por defecto (config.ps1 no encontrado)" -ForegroundColor Yellow
 }
 
 # Archivos de salida
@@ -96,16 +96,16 @@ else {
 }
 
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "   INICIANDO ESCÁNER DE RED - MONITOR DE PROTOCOLOS" -ForegroundColor Cyan
+Write-Host "   INICIANDO ESCANER DE RED - MONITOR DE PROTOCOLOS" -ForegroundColor Cyan
 Write-Host "================================================================"
 Write-Host "Subred objetivo: ${SubnetPrefix}0/24"
-Write-Host "Modo de operación: $OperationMode" -ForegroundColor Magenta
+Write-Host "Modo de operacion: $OperationMode" -ForegroundColor Magenta
 if ($ApiEnabled) {
     Write-Host "API URL: $ApiUrl" -ForegroundColor Cyan
 }
 Write-Host "Version de PowerShell: $($PSVersionTable.PSVersion.ToString())"
-Write-Host "En dominio: $(if ($IsInDomain) { 'Sí (usando WMI/CIM + TTL)' } else { 'No (usando solo TTL)' })"
-Write-Host "Último escaneo: $LastScanInfo" -ForegroundColor Yellow
+Write-Host "En dominio: $(if ($IsInDomain) { 'Si (usando WMI/CIM + TTL)' } else { 'No (usando solo TTL)' })"
+Write-Host "Ultimo escaneo: $LastScanInfo" -ForegroundColor Yellow
 Write-Host "----------------------------------------------------------------"
 
 # ==============================================================================
@@ -113,8 +113,6 @@ Write-Host "----------------------------------------------------------------"
 # ==============================================================================
 
 function Get-RemoteProtocols {
-    # La sincronización remota se deshabilita temporalmente al usar el modo PHP desacoplado
-    # El backend PHP procesará los puertos y aprenderá nuevos automáticamente.
     return $null
 }
 
@@ -126,15 +124,7 @@ if ($RemotePortsList) {
 }
 
 function Get-IpRange {
-    <#
-    .SYNOPSIS
-        Genera el rango de IPs para una subred /24.
-    .OUTPUTS
-        System.String[]
-    #>
-    param (
-        [string]$Prefix
-    )
+    param ([string]$Prefix)
     
     $Ips = @()
     for ($i = 1; $i -lt 255; $i++) {
@@ -144,17 +134,7 @@ function Get-IpRange {
 }
 
 function Get-OSFromTTL {
-    <#
-    .SYNOPSIS
-        Infiere el sistema operativo basándose en el valor TTL del ping.
-    .PARAMETER Ttl
-        Valor TTL obtenido de la respuesta ping.
-    .OUTPUTS
-        String con el OS inferido.
-    #>
-    param (
-        [int]$Ttl
-    )
+    param ([int]$Ttl)
     
     if ($Ttl -le 64) {
         return "Linux/Unix"
@@ -171,20 +151,9 @@ function Get-OSFromTTL {
 }
 
 function Get-OSFromWMI {
-    <#
-    .SYNOPSIS
-        Obtiene el sistema operativo mediante WMI/CIM.
-    .PARAMETER IpAddress
-        Dirección IP del host a consultar.
-    .OUTPUTS
-        String con el nombre del OS o cadena vacía si falla.
-    #>
-    param (
-        [string]$IpAddress
-    )
+    param ([string]$IpAddress)
     
     try {
-        # Intentar consulta CIM (más moderna que WMI)
         $CimSession = New-CimSession -ComputerName $IpAddress -ErrorAction Stop -OperationTimeoutSec 2
         $OS = Get-CimInstance -CimSession $CimSession -ClassName Win32_OperatingSystem -ErrorAction Stop
         Remove-CimSession -CimSession $CimSession -ErrorAction SilentlyContinue
@@ -194,7 +163,6 @@ function Get-OSFromWMI {
         }
     }
     catch {
-        # Si falla CIM, retornar vacío para usar TTL como fallback
         return ""
     }
     
@@ -202,20 +170,9 @@ function Get-OSFromWMI {
 }
 
 function Get-MacAddress {
-    <#
-    .SYNOPSIS
-        Obtiene la dirección MAC desde la tabla ARP.
-    .PARAMETER IpAddress
-        Dirección IP del host a consultar.
-    .OUTPUTS
-        String con la dirección MAC o cadena vacía si no se encuentra.
-    #>
-    param (
-        [string]$IpAddress
-    )
+    param ([string]$IpAddress)
     
     try {
-        # Intentar usar Get-NetNeighbor (PowerShell 5.1+)
         if (Get-Command Get-NetNeighbor -ErrorAction SilentlyContinue) {
             $Neighbor = Get-NetNeighbor -IPAddress $IpAddress -ErrorAction SilentlyContinue
             if ($Neighbor -and $Neighbor.LinkLayerAddress) {
@@ -223,12 +180,10 @@ function Get-MacAddress {
             }
         }
         
-        # Fallback: parsear salida de arp -a
         $ArpOutput = arp -a $IpAddress 2>$null
         if ($ArpOutput) {
             foreach ($Line in $ArpOutput) {
                 if ($Line -match $IpAddress) {
-                    # Extraer MAC address (formato xx-xx-xx-xx-xx-xx)
                     if ($Line -match '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})') {
                         return $Matches[0]
                     }
@@ -244,37 +199,11 @@ function Get-MacAddress {
 }
 
 function Get-ManufacturerFromOUI {
-    <#
-    .SYNOPSIS
-        Obtiene el fabricante del dispositivo basándose en el OUI de la MAC.
-    .PARAMETER MacAddress
-        Dirección MAC del dispositivo.
-    .OUTPUTS
-        String con el nombre del fabricante o "Desconocido" si no se encuentra.
-    #>
-    param (
-        [string]$MacAddress
-    )
-    
-    # La resolución de fabricantes ahora se maneja en el backend
+    param ([string]$MacAddress)
     return "Desconocido"
 }
 
 function Get-OpenPorts {
-    <#
-    .SYNOPSIS
-        Escanea puertos comunes en un host y retorna los que están abiertos.
-    .PARAMETER IpAddress
-        Dirección IP del host a escanear.
-    .PARAMETER Ports
-        Array de hashtables con Port y Protocol.
-    .PARAMETER Timeout
-        Timeout en milisegundos para cada puerto.
-    .PARAMETER Cache
-        Hashtable con el caché de puertos.
-    .OUTPUTS
-        Array de objetos con Port, Protocol, Status, DetectedAt.
-    #>
     param (
         [string]$IpAddress,
         [array]$Ports,
@@ -285,16 +214,13 @@ function Get-OpenPorts {
     $OpenPorts = @()
     
     foreach ($PortInfo in $Ports) {
-        # Verificar si el puerto está en caché y es válido
         $CachedPort = Test-PortInCache -Cache $Cache -IpAddress $IpAddress -Port $PortInfo.Port
         
         if ($CachedPort) {
-            # Usar resultado del caché
             $OpenPorts += $CachedPort
             continue
         }
         
-        # No está en caché o expiró, escanear
         try {
             $TestResult = Test-NetConnection -ComputerName $IpAddress -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
             
@@ -306,13 +232,10 @@ function Get-OpenPorts {
                     DetectedAt = Get-Date -Format "HH:mm:ss"
                 }
                 $OpenPorts += $PortResult
-                
-                # Agregar al caché
                 Add-PortToCache -Cache $Cache -IpAddress $IpAddress -PortInfo $PortResult
             }
         }
         catch {
-            # Si hay error, el puerto está cerrado o filtrado
             continue
         }
     }
@@ -320,23 +243,12 @@ function Get-OpenPorts {
     return $OpenPorts
 }
 
-# ==============================================================================
-# FUNCIONES DE CACHÉ DE PUERTOS
-# ==============================================================================
-
 function Read-PortCache {
-    <#
-    .SYNOPSIS
-        Lee el caché de puertos desde el archivo JSON.
-    .OUTPUTS
-        Hashtable con el caché de puertos.
-    #>
     if (Test-Path $PortCacheFile) {
         try {
             $JsonContent = Get-Content $PortCacheFile -Raw -ErrorAction Stop
             $CacheData = $JsonContent | ConvertFrom-Json
             
-            # Convertir a hashtable para acceso rápido
             $Cache = @{}
             $CacheData.PSObject.Properties | ForEach-Object {
                 $Cache[$_.Name] = $_.Value
@@ -351,37 +263,17 @@ function Read-PortCache {
 }
 
 function Write-PortCache {
-    <#
-    .SYNOPSIS
-        Guarda el caché de puertos en el archivo JSON.
-    .PARAMETER Cache
-        Hashtable con el caché de puertos.
-    #>
-    param (
-        [hashtable]$Cache
-    )
+    param ([hashtable]$Cache)
     
     try {
         $Cache | ConvertTo-Json -Depth 3 | Out-File -FilePath $PortCacheFile -Encoding UTF8 -Force
     }
     catch {
-        Write-Warning "No se pudo guardar el caché de puertos: $_"
+        Write-Warning "No se pudo guardar el cache de puertos: $_"
     }
 }
 
 function Test-PortInCache {
-    <#
-    .SYNOPSIS
-        Verifica si un puerto está en caché y aún es válido.
-    .PARAMETER Cache
-        Hashtable con el caché.
-    .PARAMETER IpAddress
-        Dirección IP.
-    .PARAMETER Port
-        Número de puerto.
-    .OUTPUTS
-        PSCustomObject con la información del puerto si está en caché y es válido, $null si no.
-    #>
     param (
         [hashtable]$Cache,
         [string]$IpAddress,
@@ -396,7 +288,6 @@ function Test-PortInCache {
         $Age = (Get-Date) - $LastScanned
         
         if ($Age.TotalMinutes -lt $PortCacheTTLMinutes) {
-            # Entrada válida, retornar datos
             return [PSCustomObject]@{
                 Port       = $Entry.Port
                 Protocol   = $Entry.Protocol
@@ -410,16 +301,6 @@ function Test-PortInCache {
 }
 
 function Add-PortToCache {
-    <#
-    .SYNOPSIS
-        Agrega un puerto al caché.
-    .PARAMETER Cache
-        Hashtable con el caché.
-    .PARAMETER IpAddress
-        Dirección IP.
-    .PARAMETER PortInfo
-        Objeto con información del puerto.
-    #>
     param (
         [hashtable]$Cache,
         [string]$IpAddress,
@@ -439,15 +320,7 @@ function Add-PortToCache {
 }
 
 function Clean-ExpiredCache {
-    <#
-    .SYNOPSIS
-        Limpia entradas expiradas del caché.
-    .PARAMETER Cache
-        Hashtable con el caché.
-    #>
-    param (
-        [hashtable]$Cache
-    )
+    param ([hashtable]$Cache)
     
     $ExpiredKeys = @()
     
@@ -466,156 +339,7 @@ function Clean-ExpiredCache {
     }
 }
 
-function Send-ResultsToApi {
-    <#
-    .SYNOPSIS
-        Procesa resultados del escaneo en modo híbrido (API + Local).
-    .PARAMETER Results
-        Array de objetos con los resultados del escaneo.
-    .PARAMETER Subnet
-        Subred escaneada.
-    #>
-    param (
-        [array]$Results,
-        [string]$Subnet
-    )
-    
-    Write-Host "📡 Preparando datos para procesamiento..." -ForegroundColor Yellow
-    
-    # Filtrar solo hosts activos
-    $ActiveHosts = $Results | Where-Object { $_.Status -eq "Active" }
-    
-    if ($ActiveHosts.Count -eq 0) {
-        Write-Host "No hay hosts activos para procesar." -ForegroundColor Yellow
-        return
-    }
-    
-    # Construir payload en formato API
-    $DevicesPayload = @()
-    
-    foreach ($HostObj in $ActiveHosts) {
-        # Convertir puertos a string para el formato API
-        $PortsString = ""
-        if ($HostObj.OpenPorts) {
-            $PortNumbers = $HostObj.OpenPorts | ForEach-Object { $_.Port }
-            $PortsString = ($PortNumbers -join ",")
-        }
-        
-        $DevicesPayload += @{
-            IP        = $HostObj.IP
-            MAC       = $HostObj.MacAddress
-            Hostname  = $HostObj.Hostname
-            OpenPorts = $PortsString
-        }
-    }
-    
-    $ApiPayload = @{
-        Devices = $DevicesPayload
-    }
-    
-    $JsonPayload = $ApiPayload | ConvertTo-Json -Depth 10
-    
-    # Determinar modo de operación
-    $ApiSuccess = $false
-    
-    if ($OperationMode -eq "api" -or $OperationMode -eq "hybrid") {
-        if ($ApiEnabled) {
-            Write-Host "📡 Enviando datos a la API..." -ForegroundColor Cyan
-            Write-Host "   URL: $ApiUrl" -ForegroundColor Gray
-            
-            # Intentar envío con reintentos
-            for ($attempt = 1; $attempt -le $ApiRetries; $attempt++) {
-                try {
-                    if ($attempt -gt 1) {
-                        Write-Host "   Reintento $attempt de $ApiRetries..." -ForegroundColor Yellow
-                        Start-Sleep -Seconds $ApiRetryDelay
-                    }
-                    
-                    $Response = Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $JsonPayload -ContentType "application/json" -TimeoutSec $ApiTimeout -ErrorAction Stop
-                    
-                    if ($Response.success) {
-                        Write-Host "✅ Datos enviados correctamente a la API." -ForegroundColor Green
-                        Write-Host "   Procesados: $($Response.summary.processed) | Conflictos: $($Response.summary.conflicts) | Errores: $($Response.summary.errors)" -ForegroundColor Gray
-                        $ApiSuccess = $true
-                        break
-                    }
-                    else {
-                        Write-Warning "⚠️ La API respondió con error: $($Response.message)"
-                    }
-                }
-                catch {
-                    $ErrorMsg = $_.Exception.Message
-                    if ($attempt -eq $ApiRetries) {
-                        Write-Warning "❌ Error al enviar datos a la API después de $ApiRetries intentos: $ErrorMsg"
-                    }
-                    else {
-                        Write-Host "   Error: $ErrorMsg" -ForegroundColor DarkYellow
-                    }
-                }
-            }
-        }
-    }
-    
-    # Fallback a procesamiento local si es necesario
-    if (($OperationMode -eq "local") -or ($OperationMode -eq "hybrid" -and -not $ApiSuccess)) {
-        if ($OperationMode -eq "hybrid" -and -not $ApiSuccess) {
-            Write-Host "🔄 Activando modo local (fallback)..." -ForegroundColor Yellow
-        }
-        
-        try {
-            # Guardar archivo JSON
-            Write-Host "💾 Guardando resultados en $ScanResultsFile..." -ForegroundColor Cyan
-            $JsonPayload | Out-File -FilePath $ScanResultsFile -Encoding UTF8 -Force
-            Write-Host "✅ Archivo JSON generado correctamente." -ForegroundColor Green
-            
-            # Trigger PHP Processor local
-            if (Test-Path $PhpProcessorScript) {
-                Write-Host "🚀 Ejecutando procesador PHP local..." -ForegroundColor Cyan
-                
-                $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
-                $ProcessInfo.FileName = $PhpExecutable
-                $ProcessInfo.Arguments = $PhpProcessorScript
-                $ProcessInfo.UseShellExecute = $false
-                $ProcessInfo.RedirectStandardOutput = $true
-                $ProcessInfo.RedirectStandardError = $true
-                $ProcessInfo.CreateNoWindow = $true
-                
-                $Process = [System.Diagnostics.Process]::Start($ProcessInfo)
-                $Process.WaitForExit()
-                
-                $Output = $Process.StandardOutput.ReadToEnd()
-                $ErrorOutput = $Process.StandardError.ReadToEnd()
-                
-                if ($Process.ExitCode -eq 0) {
-                    Write-Host "✅ Procesamiento local completado." -ForegroundColor Green
-                }
-                else {
-                    Write-Warning "⚠️ El procesador PHP terminó con errores (Código $($Process.ExitCode))."
-                    if ($ErrorOutput) {
-                        Write-Warning $ErrorOutput
-                    }
-                }
-            }
-            else {
-                Write-Warning "No se encontró el script del procesador PHP en: $PhpProcessorScript"
-                Write-Host "El archivo JSON está disponible para procesamiento manual." -ForegroundColor Gray
-            }
-        }
-        catch {
-            Write-Warning "❌ Error en procesamiento local: $($_.Exception.Message)"
-        }
-    }
-}
-
 function Test-HostConnectivity {
-    <#
-    .SYNOPSIS
-        Prueba la conectividad a una IP específica de forma silenciosa.
-    .INPUTS
-        IpAddress (String)
-    .OUTPUTS
-        PSCustomObject { IP, Status, Hostname, OS, MacAddress, Manufacturer, OpenPorts }
-    #>
     param (
         [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
         [string]$IpAddress,
@@ -630,46 +354,35 @@ function Test-HostConnectivity {
     $OpenPorts = @()
 
     try {
-        # Usar clase .NET Ping para mayor control sobre el Timeout (ms) y mejor rendimiento
         $Ping = [System.Net.NetworkInformation.Ping]::new()
         $Reply = $Ping.Send($IpAddress, $PingTimeoutMs)
         $IsActive = ($Reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success)
         
-        # Si el host está activo, intentar resolver el hostname y OS
         if ($IsActive) {
-            # Capturar TTL para detección de OS
             $Ttl = $Reply.Options.Ttl
             
-            # Resolver hostname
             try {
                 $Hostname = [System.Net.Dns]::GetHostEntry($IpAddress).HostName
             }
             catch {
-                # Si no se puede resolver, usar valor por defecto
                 $Hostname = "Desconocido"
             }
             
-            # Detección híbrida de OS
             if ($IsInDomain) {
-                # Intentar WMI/CIM primero si estamos en dominio
                 $OS = Get-OSFromWMI -IpAddress $IpAddress
             }
             
-            # Si no obtuvimos OS por WMI o no estamos en dominio, usar TTL
             if ([string]::IsNullOrEmpty($OS)) {
                 $OS = Get-OSFromTTL -Ttl $Ttl
             }
             
-            # Obtener dirección MAC desde ARP
             $MacAddress = Get-MacAddress -IpAddress $IpAddress
             if ([string]::IsNullOrEmpty($MacAddress)) {
                 $MacAddress = $null
             }
             
-            # Obtener fabricante desde OUI
             $Manufacturer = Get-ManufacturerFromOUI -MacAddress $MacAddress
             
-            # Escanear puertos si está habilitado
             if ($PortScanEnabled) {
                 $OpenPorts = Get-OpenPorts -IpAddress $IpAddress -Ports $CommonPorts -Timeout $PortScanTimeout -Cache $Cache
             }
@@ -678,7 +391,6 @@ function Test-HostConnectivity {
         $Ping.Dispose()
     }
     catch {
-        # En caso de error de ejecución (no de ping fallido), asumimos inactivo
         $IsActive = $false
     }
 
@@ -694,13 +406,13 @@ function Test-HostConnectivity {
 }
 
 # ==============================================================================
-# SECCIÓN 3: EJECUCIÓN DEL ESCANEO (SIMPLIFICADA)
+# SECCIÓN 3: EJECUCIÓN DEL ESCANEO
 # ==============================================================================
 
-# Cargar caché de puertos
-Write-Host "Cargando caché de puertos..." -ForegroundColor Yellow
+# Cargar cache de puertos
+Write-Host "Cargando cache de puertos..." -ForegroundColor Yellow
 $PortCache = Read-PortCache
-Write-Host "Caché cargado: $($PortCache.Count) entradas." -ForegroundColor Green
+Write-Host "Cache cargado: $($PortCache.Count) entradas." -ForegroundColor Green
 
 Write-Host "Generando lista de objetivos..." -ForegroundColor Yellow
 $TargetIps = Get-IpRange -Prefix $SubnetPrefix
@@ -709,10 +421,9 @@ Write-Host "Objetivos generados: $($TargetIps.Count) direcciones." -ForegroundCo
 $Results = @()
 $TotalHosts = $TargetIps.Count
 
-# Modo secuencial simplificado (eliminamos el modo paralelo para evitar problemas)
 Write-Host "Modo detectado: SECUENCIAL" -ForegroundColor Yellow
 
-# Ejecución secuencial tradicional
+# Ejecución secuencial
 $Counter = 0
 foreach ($Ip in $TargetIps) {
     $Counter++
@@ -724,8 +435,8 @@ foreach ($Ip in $TargetIps) {
 }
 Write-Progress -Activity "Escaneando red..." -Completed
 
-# Actualizar caché con resultados nuevos
-Write-Host "Actualizando caché de puertos..." -ForegroundColor Yellow
+# Actualizar cache con resultados nuevos
+Write-Host "Actualizando cache de puertos..." -ForegroundColor Yellow
 foreach ($Result in $Results) {
     if ($Result.OpenPorts) {
         foreach ($Port in $Result.OpenPorts) {
@@ -734,10 +445,10 @@ foreach ($Result in $Results) {
     }
 }
 
-# Limpiar y guardar caché
+# Limpiar y guardar cache
 Clean-ExpiredCache -Cache $PortCache
 Write-PortCache -Cache $PortCache
-Write-Host "Caché actualizado y guardado." -ForegroundColor Green
+Write-Host "Cache actualizado y guardado." -ForegroundColor Green
 
 # ==============================================================================
 # SECCIÓN 4: PROCESAMIENTO Y EXPORTACIÓN
@@ -745,21 +456,13 @@ Write-Host "Caché actualizado y guardado." -ForegroundColor Green
 
 Write-Host "Procesando resultados..." -ForegroundColor Yellow
 
-# Filtrar solo hosts activos
 $ActiveHosts = $Results | Where-Object { $_.Status -eq "Active" }
 $InactiveCount = ($Results | Where-Object { $_.Status -eq "Inactive" }).Count
 
-# Generar reporte consolidado
-try {
-    # Reporte de texto deshabilitado por solicitud del usuario
-    Write-Host "Reporte de texto deshabilitado. Solo se enviarán datos a la API." -ForegroundColor Gray
-}
-catch {
-    Write-Error "Error al procesar resultados: $_"
-}
+Write-Host "Reporte de texto deshabilitado. Solo se enviarán datos a la API." -ForegroundColor Gray
 
 # ==============================================================================
-# SECCIÓN 5: RESUMEN FINAL
+# SECCIÓN 5: ENVÍO A API
 # ==============================================================================
 
 Write-Host "----------------------------------------------------------------"
@@ -769,11 +472,8 @@ Write-Host "Total IPs escaneadas : $($Results.Count)"
 Write-Host "IPs Activas          : $($ActiveHosts.Count)" -ForegroundColor Green
 Write-Host "IPs Inactivas        : $InactiveCount" -ForegroundColor Red
 Write-Host "----------------------------------------------------------------"
-Write-Host "Archivo generado:"
-Write-Host " -> $OutputFileReport"
-Write-Host "================================================================"
 
-# Guardar información del escaneo actual para futuras referencias
+# Guardar información del escaneo actual
 try {
     $CurrentScanTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $CurrentScanTime | Out-File -FilePath $ScanHistoryFile -Encoding UTF8 -Force
@@ -782,5 +482,114 @@ catch {
     Write-Warning "No se pudo guardar el historial del escaneo"
 }
 
-# Enviar resultados a la API
-Send-ResultsToApi -Results $Results -Subnet $SubnetPrefix
+# ==============================================================================
+# FUNCIÓN DE ENVÍO A API
+# ==============================================================================
+
+Write-Host "[API] Enviando datos a la API..." -ForegroundColor Cyan
+
+# Preparar datos para la API
+$ApiPayload = @{
+    Devices = @()
+}
+
+foreach ($HostObj in $ActiveHosts) {
+    # Convertir puertos a string
+    $PortsString = ""
+    if ($HostObj.OpenPorts) {
+        $PortNumbers = $HostObj.OpenPorts | ForEach-Object { $_.Port }
+        $PortsString = ($PortNumbers -join ",")
+    }
+    
+    $ApiPayload.Devices += @{
+        IP        = $HostObj.IP
+        MAC       = if ($HostObj.MacAddress) { $HostObj.MacAddress } else { "" }
+        Hostname  = $HostObj.Hostname
+        OpenPorts = $PortsString
+    }
+}
+
+# Convertir a JSON
+$JsonPayload = $ApiPayload | ConvertTo-Json -Depth 10
+
+# Intentar enviar a la API
+$ApiSuccess = $false
+
+if ($ApiEnabled) {
+    for ($attempt = 1; $attempt -le $ApiRetries; $attempt++) {
+        try {
+            if ($attempt -gt 1) {
+                Write-Host "   Reintento $attempt de $ApiRetries..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $ApiRetryDelay
+            }
+            
+            $Response = Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $JsonPayload -ContentType "application/json" -TimeoutSec $ApiTimeout -ErrorAction Stop
+            
+            if ($Response.success) {
+                Write-Host "[OK] Datos enviados correctamente a la API." -ForegroundColor Green
+                Write-Host "   Procesados: $($Response.summary.processed) | Conflictos: $($Response.summary.conflicts) | Errores: $($Response.summary.errors)" -ForegroundColor Gray
+                $ApiSuccess = $true
+                break
+            }
+            else {
+                Write-Warning "[ADVERTENCIA] La API respondio con error: $($Response.message)"
+            }
+        }
+        catch {
+            $ErrorMsg = $_.Exception.Message
+            if ($attempt -eq $ApiRetries) {
+                Write-Warning "[ERROR] Error al enviar datos a la API despues de $ApiRetries intentos: $ErrorMsg"
+            }
+            else {
+                Write-Host "   Error: $ErrorMsg" -ForegroundColor DarkYellow
+            }
+        }
+    }
+}
+
+# Si falló la API, guardar archivo local
+if (-not $ApiSuccess) {
+    Write-Host "[LOCAL] Guardando resultados locales..." -ForegroundColor Yellow
+    
+    # Crear formato para cron_process.php
+    $LocalPayload = @{
+        subnet         = "${SubnetPrefix}0/24"
+        scan_timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ss"
+        hosts          = @()
+    }
+    
+    foreach ($HostObj in $ActiveHosts) {
+        $OpenPortsArray = @()
+        if ($HostObj.OpenPorts) {
+            foreach ($Port in $HostObj.OpenPorts) {
+                $OpenPortsArray += @{
+                    port        = $Port.Port
+                    protocol    = $Port.Protocol
+                    detected_at = $Port.DetectedAt
+                }
+            }
+        }
+        
+        $LocalPayload.hosts += @{
+            ip           = $HostObj.IP
+            mac          = $HostObj.MacAddress
+            hostname     = $HostObj.Hostname
+            os           = $HostObj.OS
+            manufacturer = $HostObj.Manufacturer
+            open_ports   = $OpenPortsArray
+        }
+    }
+    
+    try {
+        $LocalJsonPayload = $LocalPayload | ConvertTo-Json -Depth 10
+        $LocalJsonPayload | Out-File -FilePath $ScanResultsFile -Encoding UTF8 -Force
+        Write-Host "[OK] Archivo $ScanResultsFile generado correctamente." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "[ERROR] Error al guardar archivo local: $_"
+    }
+}
+
+Write-Host "================================================================"
+Write-Host "ESCANEO COMPLETADO" -ForegroundColor Green
+Write-Host "================================================================"
