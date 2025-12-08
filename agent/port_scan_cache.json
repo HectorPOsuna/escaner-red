@@ -1,33 +1,33 @@
 ﻿{
     "192.168.100.81:5432":  {
                                 "Port":  5432,
-                                "DetectedAt":  "02:50:53",
+                                "DetectedAt":  "02:56:10",
                                 "IP":  "192.168.100.81",
-                                "LastScanned":  "2025-12-08T02:52:21",
+                                "LastScanned":  "2025-12-08T02:57:38",
                                 "Status":  "Open",
                                 "Protocol":  "PostgreSQL"
                             },
     "192.168.100.1:80":  {
                              "Port":  80,
-                             "DetectedAt":  "02:46:29",
+                             "DetectedAt":  "02:51:45",
                              "IP":  "192.168.100.1",
-                             "LastScanned":  "2025-12-08T02:52:21",
+                             "LastScanned":  "2025-12-08T02:57:38",
                              "Status":  "Open",
                              "Protocol":  "HTTP"
                          },
     "192.168.100.1:53":  {
                              "Port":  53,
-                             "DetectedAt":  "02:46:29",
+                             "DetectedAt":  "02:51:45",
                              "IP":  "192.168.100.1",
-                             "LastScanned":  "2025-12-08T02:52:21",
+                             "LastScanned":  "2025-12-08T02:57:38",
                              "Status":  "Open",
                              "Protocol":  "DNS"
                          },
     "192.168.100.81:445":  {
                                "Port":  445,
-                               "DetectedAt":  "02:50:49",
+                               "DetectedAt":  "02:56:06",
                                "IP":  "192.168.100.81",
-                               "LastScanned":  "2025-12-08T02:52:21",
+                               "LastScanned":  "2025-12-08T02:57:38",
                                "Status":  "Open",
                                "Protocol":  "SMB"
                            }

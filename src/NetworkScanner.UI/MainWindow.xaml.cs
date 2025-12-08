@@ -19,16 +19,8 @@ namespace NetworkScanner.UI
         {
             InitializeComponent();
             
-            // Buscar appsettings.json
-            // 1. En directorio actual (desarrollo)
-            // 2. En directorio del servicio (producción, si están juntos)
-            // Para demo asumimos que se copian juntos
-            if (!File.Exists(_appSettingsPath))
-            {
-               // Intentar buscar en ../NetworkScanner.Service/ si estamos en debug
-               string devPath = @"..\..\..\..\NetworkScanner.Service\appsettings.json";
-               if (File.Exists(devPath)) _appSettingsPath = devPath;
-            }
+            // Use PathResolver to find appsettings.json
+            _appSettingsPath = PathResolver.GetServiceConfigPath() ?? "appsettings.json";
 
             LoadConfig();
             UpdateStatus();
@@ -83,7 +75,6 @@ namespace NetworkScanner.UI
                 try
                 {
                     string json = File.ReadAllText(_appSettingsPath);
-                    // Parseo simple para demo, idealmente usar ScannerSettings
                     using (JsonDocument doc = JsonDocument.Parse(json))
                     {
                         var settings = doc.RootElement.GetProperty("ScannerSettings");
@@ -100,18 +91,13 @@ namespace NetworkScanner.UI
         {
             try
             {
-                // Leer y actualizar solo ScannerSettings
-                // Esto es simplificado. En prod usar serialización tipada completa.
                 string json = File.Exists(_appSettingsPath) ? File.ReadAllText(_appSettingsPath) : "{}";
                 
-                // Hack rápido para demo: reemplazar valores a lo bruto o reconstruir JSON
-                // Mejor: Reconstruir usando el objeto
                 var newSettings = new ScannerSettings
                 {
                     IntervalMinutes = int.Parse(TxtInterval.Text),
                     ApiUrl = TxtApiUrl.Text,
                     ScriptPath = TxtScriptPath.Text
-                    // Otros defaults
                 };
 
                 var root = new { 
@@ -130,8 +116,8 @@ namespace NetworkScanner.UI
 
         private void LoadLogs()
         {
-            // Leer último log de C:\Logs\NetworkScanner
-            string logDir = @"C:\Logs\NetworkScanner";
+            // Use PathResolver for logs directory
+            string logDir = PathResolver.GetLogsDirectory();
             if (Directory.Exists(logDir))
             {
                 var files = Directory.GetFiles(logDir, "*.log");
@@ -141,7 +127,6 @@ namespace NetworkScanner.UI
                     string lastLog = files[files.Length - 1];
                     try
                     {
-                         // Leer últimas líneas
                          string[] lines = File.ReadAllLines(lastLog);
                          LogOutput.Text = string.Join(Environment.NewLine, lines);
                          LogOutput.ScrollToEnd();
@@ -155,33 +140,36 @@ namespace NetworkScanner.UI
         {
             try
             {
-                // Asumimos que el EXE del servicio se llama "NetworkScanner.Service.exe" 
-                // y está en la misma carpeta que la UI
-                string currentDir = AppDomain.CurrentDomain.BaseDirectory;
-                string serviceExe = Path.Combine(currentDir, "NetworkScanner.Service.exe");
+                // Use centralized path resolver
+                string? serviceExe = PathResolver.GetServiceExecutablePath();
                 
-                // Si estamos en debug, buscar en la carpeta del otro proyecto
-                if (!File.Exists(serviceExe))
+                if (serviceExe == null)
                 {
-                     // Try debug path relative check
-                     string debugPath = Path.GetFullPath(Path.Combine(currentDir, @"..\..\..\..\NetworkScanner.Service\bin\Debug\net10.0\NetworkScanner.Service.exe"));
-                     // Nota: ajusta "net10.0" según tu sdk 
-                     if (File.Exists(debugPath)) serviceExe = debugPath;
-                }
-
-                if (!File.Exists(serviceExe))
-                {
-                    MessageBox.Show($"No se encuentra el ejecutable del servicio:\n{serviceExe}", "Error");
+                    MessageBox.Show(
+                        "No se encuentra el ejecutable del servicio.\n\n" +
+                        "Ubicaciones buscadas:\n" +
+                        "- C:\\Program Files\\NetworkScanner\\Service\\NetworkScanner.Service.exe\n" +
+                        "- Directorio de la UI\n" +
+                        "- Directorio padre\\Service\\\n" +
+                        "- Entorno de desarrollo\n\n" +
+                        "Asegúrate de que el servicio esté correctamente instalado.",
+                        "Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
                     return;
                 }
 
                 ServiceManager.InstallService(serviceExe);
-                MessageBox.Show("Servicio instalado correctamente.", "Éxito");
+                MessageBox.Show(
+                    $"Servicio instalado correctamente.\n\nRuta: {serviceExe}",
+                    "Éxito",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
                 UpdateStatus();
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error de instalación: {ex.Message}", "Error");
+                MessageBox.Show($"Error de instalación: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

@@ -6,12 +6,12 @@
                                          {
                                              "port":  53,
                                              "protocol":  "DNS",
-                                             "detected_at":  "02:46:29"
+                                             "detected_at":  "02:51:45"
                                          },
                                          {
                                              "port":  80,
                                              "protocol":  "HTTP",
-                                             "detected_at":  "02:46:29"
+                                             "detected_at":  "02:51:45"
                                          }
                                      ],
                       "manufacturer":  "Desconocido",
@@ -75,12 +75,12 @@
                                          {
                                              "port":  445,
                                              "protocol":  "SMB",
-                                             "detected_at":  "02:50:49"
+                                             "detected_at":  "02:56:06"
                                          },
                                          {
                                              "port":  5432,
                                              "protocol":  "PostgreSQL",
-                                             "detected_at":  "02:50:53"
+                                             "detected_at":  "02:56:10"
                                          }
                                      ],
                       "manufacturer":  "Desconocido",
@@ -90,5 +90,5 @@
                       "os":  "Windows"
                   }
               ],
-    "scan_timestamp":  "2025-12-08T02:52:26"
+    "scan_timestamp":  "2025-12-08T02:57:44"
 }
