@@ -168,12 +168,47 @@ if ($RemotePortsList) {
 }
 
 function Get-IpRange {
-    param ([string]$Prefix)
+    param (
+        [string]$Prefix,
+        [string]$StartIP = "",
+        [string]$EndIP = ""
+    )
     
     $Ips = @()
-    for ($i = 1; $i -lt 255; $i++) {
-        $Ips += "${Prefix}${i}"
+
+    if (-not [string]::IsNullOrEmpty($StartIP) -and -not [string]::IsNullOrEmpty($EndIP)) {
+        # Validar y generar rango
+        try {
+            $start = [System.Version]$StartIP
+            $end = [System.Version]$EndIP
+            
+            # Asumimos /24 para simplificar lógica en este paso, 
+            # pero iteramos el último octeto si los primeros 3 coinciden
+            if ($start.Major -eq $end.Major -and $start.Minor -eq $end.Minor -and $start.Build -eq $end.Build) {
+                # Rango simple en la misma subred
+                for ($i = $start.Revision; $i -le $end.Revision; $i++) {
+                    $Ips += "$($start.Major).$($start.Minor).$($start.Build).$i"
+                }
+            }
+            else {
+                # Fallback a subnet simple si el rango es complejo
+                Write-Warning "Rango complejo no soportado completamente. Usando Prefijo."
+                for ($i = 1; $i -lt 255; $i++) {
+                    $Ips += "${Prefix}${i}"
+                }
+            }
+        }
+        catch {
+            Write-Warning "Error generando rango de IPs"
+        }
     }
+    else {
+        # Comportamiento anterior (Subred completa)
+        for ($i = 1; $i -lt 255; $i++) {
+            $Ips += "${Prefix}${i}"
+        }
+    }
+    
     return $Ips
 }
 
