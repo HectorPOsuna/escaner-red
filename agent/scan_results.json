@@ -4,29 +4,14 @@
                   {
                       "open_ports":  [
                                          {
-                                             "port":  25,
-                                             "protocol":  "SMTP",
-                                             "detected_at":  "01:32:58"
-                                         },
-                                         {
                                              "port":  53,
                                              "protocol":  "DNS",
-                                             "detected_at":  "01:32:58"
+                                             "detected_at":  "02:46:29"
                                          },
                                          {
                                              "port":  80,
                                              "protocol":  "HTTP",
-                                             "detected_at":  "01:32:58"
-                                         },
-                                         {
-                                             "port":  110,
-                                             "protocol":  "POP3",
-                                             "detected_at":  "01:32:58"
-                                         },
-                                         {
-                                             "port":  143,
-                                             "protocol":  "IMAP",
-                                             "detected_at":  "01:32:58"
+                                             "detected_at":  "02:46:29"
                                          }
                                      ],
                       "manufacturer":  "Desconocido",
@@ -37,21 +22,7 @@
                   },
                   {
                       "open_ports":  [
-                                         {
-                                             "port":  25,
-                                             "protocol":  "SMTP",
-                                             "detected_at":  "01:33:23"
-                                         },
-                                         {
-                                             "port":  110,
-                                             "protocol":  "POP3",
-                                             "detected_at":  "01:33:27"
-                                         },
-                                         {
-                                             "port":  143,
-                                             "protocol":  "IMAP",
-                                             "detected_at":  "01:33:27"
-                                         }
+
                                      ],
                       "manufacturer":  "Desconocido",
                       "mac":  "D0-A4-6F-65-D0-15",
@@ -61,21 +32,7 @@
                   },
                   {
                       "open_ports":  [
-                                         {
-                                             "port":  25,
-                                             "protocol":  "SMTP",
-                                             "detected_at":  "01:33:53"
-                                         },
-                                         {
-                                             "port":  110,
-                                             "protocol":  "POP3",
-                                             "detected_at":  "01:33:58"
-                                         },
-                                         {
-                                             "port":  143,
-                                             "protocol":  "IMAP",
-                                             "detected_at":  "01:33:58"
-                                         }
+
                                      ],
                       "manufacturer":  "Desconocido",
                       "mac":  "9C-2F-4E-34-31-CB",
@@ -85,21 +42,7 @@
                   },
                   {
                       "open_ports":  [
-                                         {
-                                             "port":  25,
-                                             "protocol":  "SMTP",
-                                             "detected_at":  "01:34:29"
-                                         },
-                                         {
-                                             "port":  110,
-                                             "protocol":  "POP3",
-                                             "detected_at":  "01:34:33"
-                                         },
-                                         {
-                                             "port":  143,
-                                             "protocol":  "IMAP",
-                                             "detected_at":  "01:34:33"
-                                         }
+
                                      ],
                       "manufacturer":  "Desconocido",
                       "mac":  "D0-A4-6F-65-BD-9D",
@@ -109,21 +52,17 @@
                   },
                   {
                       "open_ports":  [
-                                         {
-                                             "port":  25,
-                                             "protocol":  "SMTP",
-                                             "detected_at":  "01:35:20"
-                                         },
-                                         {
-                                             "port":  110,
-                                             "protocol":  "POP3",
-                                             "detected_at":  "01:35:31"
-                                         },
-                                         {
-                                             "port":  143,
-                                             "protocol":  "IMAP",
-                                             "detected_at":  "01:35:31"
-                                         }
+
+                                     ],
+                      "manufacturer":  "Desconocido",
+                      "mac":  "A6-48-FA-4C-7E-E2",
+                      "hostname":  "Desconocido",
+                      "ip":  "192.168.100.19",
+                      "os":  "Linux/Unix"
+                  },
+                  {
+                      "open_ports":  [
+
                                      ],
                       "manufacturer":  "Desconocido",
                       "mac":  "20-E2-A8-29-3D-C4",
@@ -136,12 +75,12 @@
                                          {
                                              "port":  445,
                                              "protocol":  "SMB",
-                                             "detected_at":  "01:36:17"
+                                             "detected_at":  "02:50:49"
                                          },
                                          {
                                              "port":  5432,
                                              "protocol":  "PostgreSQL",
-                                             "detected_at":  "01:36:22"
+                                             "detected_at":  "02:50:53"
                                          }
                                      ],
                       "manufacturer":  "Desconocido",
@@ -151,5 +90,5 @@
                       "os":  "Windows"
                   }
               ],
-    "scan_timestamp":  "2025-12-08T01:38:03"
+    "scan_timestamp":  "2025-12-08T02:52:26"
 }

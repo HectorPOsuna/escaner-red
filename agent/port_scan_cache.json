@@ -1,154 +1,34 @@
 ﻿{
-    "192.168.100.7:110":  {
-                              "Port":  110,
-                              "DetectedAt":  "01:33:58",
-                              "IP":  "192.168.100.7",
-                              "LastScanned":  "2025-12-08T01:37:50",
-                              "Status":  "Open",
-                              "Protocol":  "POP3"
-                          },
-    "192.168.100.18:25":  {
-                              "Port":  25,
-                              "DetectedAt":  "01:34:29",
-                              "IP":  "192.168.100.18",
-                              "LastScanned":  "2025-12-08T01:37:50",
-                              "Status":  "Open",
-                              "Protocol":  "SMTP"
-                          },
-    "192.168.100.1:110":  {
-                              "Port":  110,
-                              "DetectedAt":  "01:32:58",
-                              "IP":  "192.168.100.1",
-                              "LastScanned":  "2025-12-08T01:37:50",
-                              "Status":  "Open",
-                              "Protocol":  "POP3"
-                          },
-    "192.168.100.18:143":  {
-                               "Port":  143,
-                               "DetectedAt":  "01:34:33",
-                               "IP":  "192.168.100.18",
-                               "LastScanned":  "2025-12-08T01:37:50",
-                               "Status":  "Open",
-                               "Protocol":  "IMAP"
-                           },
-    "192.168.100.54:25":  {
-                              "Port":  25,
-                              "DetectedAt":  "01:35:20",
-                              "IP":  "192.168.100.54",
-                              "LastScanned":  "2025-12-08T01:37:50",
-                              "Status":  "Open",
-                              "Protocol":  "SMTP"
-                          },
-    "192.168.100.7:143":  {
-                              "Port":  143,
-                              "DetectedAt":  "01:33:58",
-                              "IP":  "192.168.100.7",
-                              "LastScanned":  "2025-12-08T01:37:50",
-                              "Status":  "Open",
-                              "Protocol":  "IMAP"
-                          },
-    "192.168.100.3:110":  {
-                              "Port":  110,
-                              "DetectedAt":  "01:33:27",
-                              "IP":  "192.168.100.3",
-                              "LastScanned":  "2025-12-08T01:37:50",
-                              "Status":  "Open",
-                              "Protocol":  "POP3"
-                          },
-    "192.168.100.1:143":  {
-                              "Port":  143,
-                              "DetectedAt":  "01:32:58",
-                              "IP":  "192.168.100.1",
-                              "LastScanned":  "2025-12-08T01:37:50",
-                              "Status":  "Open",
-                              "Protocol":  "IMAP"
-                          },
-    "192.168.100.3:25":  {
-                             "Port":  25,
-                             "DetectedAt":  "01:33:23",
-                             "IP":  "192.168.100.3",
-                             "LastScanned":  "2025-12-08T01:37:50",
-                             "Status":  "Open",
-                             "Protocol":  "SMTP"
-                         },
-    "192.168.100.1:25":  {
-                             "Port":  25,
-                             "DetectedAt":  "01:32:58",
-                             "IP":  "192.168.100.1",
-                             "LastScanned":  "2025-12-08T01:37:50",
-                             "Status":  "Open",
-                             "Protocol":  "SMTP"
-                         },
     "192.168.100.81:5432":  {
                                 "Port":  5432,
-                                "DetectedAt":  "01:36:22",
+                                "DetectedAt":  "02:50:53",
                                 "IP":  "192.168.100.81",
-                                "LastScanned":  "2025-12-08T01:37:50",
+                                "LastScanned":  "2025-12-08T02:52:21",
                                 "Status":  "Open",
                                 "Protocol":  "PostgreSQL"
                             },
-    "192.168.100.1:53":  {
-                             "Port":  53,
-                             "DetectedAt":  "01:32:58",
-                             "IP":  "192.168.100.1",
-                             "LastScanned":  "2025-12-08T01:37:50",
-                             "Status":  "Open",
-                             "Protocol":  "DNS"
-                         },
-    "192.168.100.18:110":  {
-                               "Port":  110,
-                               "DetectedAt":  "01:34:33",
-                               "IP":  "192.168.100.18",
-                               "LastScanned":  "2025-12-08T01:37:50",
-                               "Status":  "Open",
-                               "Protocol":  "POP3"
-                           },
-    "192.168.100.54:143":  {
-                               "Port":  143,
-                               "DetectedAt":  "01:35:31",
-                               "IP":  "192.168.100.54",
-                               "LastScanned":  "2025-12-08T01:37:50",
-                               "Status":  "Open",
-                               "Protocol":  "IMAP"
-                           },
-    "192.168.100.3:143":  {
-                              "Port":  143,
-                              "DetectedAt":  "01:33:27",
-                              "IP":  "192.168.100.3",
-                              "LastScanned":  "2025-12-08T01:37:50",
-                              "Status":  "Open",
-                              "Protocol":  "IMAP"
-                          },
-    "192.168.100.81:445":  {
-                               "Port":  445,
-                               "DetectedAt":  "01:36:17",
-                               "IP":  "192.168.100.81",
-                               "LastScanned":  "2025-12-08T01:37:50",
-                               "Status":  "Open",
-                               "Protocol":  "SMB"
-                           },
-    "192.168.100.54:110":  {
-                               "Port":  110,
-                               "DetectedAt":  "01:35:31",
-                               "IP":  "192.168.100.54",
-                               "LastScanned":  "2025-12-08T01:37:50",
-                               "Status":  "Open",
-                               "Protocol":  "POP3"
-                           },
     "192.168.100.1:80":  {
                              "Port":  80,
-                             "DetectedAt":  "01:32:58",
+                             "DetectedAt":  "02:46:29",
                              "IP":  "192.168.100.1",
-                             "LastScanned":  "2025-12-08T01:37:50",
+                             "LastScanned":  "2025-12-08T02:52:21",
                              "Status":  "Open",
                              "Protocol":  "HTTP"
                          },
-    "192.168.100.7:25":  {
-                             "Port":  25,
-                             "DetectedAt":  "01:33:53",
-                             "IP":  "192.168.100.7",
-                             "LastScanned":  "2025-12-08T01:37:50",
+    "192.168.100.1:53":  {
+                             "Port":  53,
+                             "DetectedAt":  "02:46:29",
+                             "IP":  "192.168.100.1",
+                             "LastScanned":  "2025-12-08T02:52:21",
                              "Status":  "Open",
-                             "Protocol":  "SMTP"
-                         }
+                             "Protocol":  "DNS"
+                         },
+    "192.168.100.81:445":  {
+                               "Port":  445,
+                               "DetectedAt":  "02:50:49",
+                               "IP":  "192.168.100.81",
+                               "LastScanned":  "2025-12-08T02:52:21",
+                               "Status":  "Open",
+                               "Protocol":  "SMB"
+                           }
 }

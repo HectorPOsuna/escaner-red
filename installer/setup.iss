@@ -40,9 +40,8 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "startservice"; Description: "Iniciar servicio automáticamente"; GroupDescription: "Servicio Windows:"; Flags: checked
-Name: "installwatchdog"; Description: "Instalar Watchdog (monitoreo externo - recomendado para producción)"; GroupDescription: "Watchdog:"; Flags: checked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "installwatchdog"; Description: "Instalar Watchdog (monitoreo externo - recomendado para producción)"; GroupDescription: "Watchdog:"
 
 [Files]
 ; Servicio
