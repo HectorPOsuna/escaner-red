@@ -32,18 +32,9 @@ namespace NetworkScannerService
             _settings = settings.Value;
             _httpClientFactory = httpClientFactory;
 
-            // Configurar directorio de logs desde appsettings o default
-            _logDirectory = @"C:\Logs\NetworkScannerService"; // Default hardcoded si no viene en config, aunque el usuario pidió config.
-            // Para cumplir con el requerimiento 5 "logging configurable", usaremos una ruta fija o revisaremos si se pasó en Logging section.
-            // En appsettings.json vi "Logging: { LogDirectory: ... }".
-            // Para simplificar y no over-engineer, usaré la ruta definida.
-            
-            // Nota: En .NET moderno Logging suele ir a EventLog o FileLoggerProvider.
-            // Aqui mantendré la implementación manual de log a archivo solicitada por el usuario
-            // para cumplir con "Registrar eventos clave... en una carpeta configurable".
-            // Asumiré que la carpeta base viene ya sea fija o podríamos leerla de config extra.
-            // Usaré la que estaba en el código anterior o una buena práctica.
-            _logDirectory = @"C:\Logs\MiServicio"; 
+            // Usar ProgramData para logs (Standard Windows Practice)
+            string commonData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            _logDirectory = Path.Combine(commonData, "NetworkScanner", "Logs"); 
 
             if (!Directory.Exists(_logDirectory))
             {
@@ -90,17 +81,30 @@ namespace NetworkScannerService
 
             try
             {
-                // 1. Validar script
-                if (!File.Exists(_settings.ScriptPath))
+                string scriptPath = _settings.ScriptPath;
+
+                // 1. Resolver ruta del script
+                if (string.IsNullOrWhiteSpace(scriptPath))
                 {
-                    throw new FileNotFoundException($"El script no existe en: {_settings.ScriptPath}");
+                    // Default relative to executable
+                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Agent", "NetworkScanner.ps1");
+                }
+                else if (!Path.IsPathRooted(scriptPath))
+                {
+                    // Relative setup
+                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, scriptPath);
                 }
 
-                string scriptDir = Path.GetDirectoryName(_settings.ScriptPath);
+                if (!File.Exists(scriptPath))
+                {
+                    throw new FileNotFoundException($"El script no existe en: {scriptPath}");
+                }
+
+                string scriptDir = Path.GetDirectoryName(scriptPath);
                 string resultsFile = Path.Combine(scriptDir, "scan_results.json");
 
                 // 2. Ejecutar PowerShell
-                LogConTimestamp($"Ejecutando script: {_settings.ScriptPath}");
+                LogConTimestamp($"Ejecutando script: {scriptPath}");
                 
                 var processInfo = new ProcessStartInfo
                 {

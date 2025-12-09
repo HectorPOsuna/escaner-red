@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.ServiceProcess;
 
 namespace NetworkScanner.UI
 {
@@ -42,7 +43,11 @@ namespace NetworkScanner.UI
             };
 
             var contextMenu = new System.Windows.Forms.ContextMenuStrip();
-            contextMenu.Items.Add("Abrir", null, (s, e) => ShowWindow());
+            contextMenu.Items.Add("Ver Panel", null, (s, e) => ShowWindow());
+            contextMenu.Items.Add("-");
+            contextMenu.Items.Add("▶️ Iniciar Servicio", null, (s, e) => ControlService(ServiceControllerStatus.Stopped));
+            contextMenu.Items.Add("⏹️ Detener Servicio", null, (s, e) => ControlService(ServiceControllerStatus.Running));
+            contextMenu.Items.Add("-");
             contextMenu.Items.Add("Salir", null, (s, e) => ExitApplication());
             _notifyIcon.ContextMenuStrip = contextMenu;
             _notifyIcon.DoubleClick += (s, e) => ShowWindow();
@@ -106,7 +111,7 @@ namespace NetworkScanner.UI
                 PanelMonitor.Visibility = Visibility.Visible;
                 
                 BtnAction.Content = _monitorController.IsMonitoring ? "DETENER MONITOREO" : "INICIAR MONITOREO";
-                BtnAction.Background = _monitorController.IsMonitoring ? Brushes.Firebrick : Brushes.RoyalBlue;
+                BtnAction.Background = _monitorController.IsMonitoring ? System.Windows.Media.Brushes.Firebrick : System.Windows.Media.Brushes.RoyalBlue;
                 
                 // Cargar info estática
                 var info = SystemMetrics.GetSystemInfo();
@@ -123,7 +128,7 @@ namespace NetworkScanner.UI
                 PanelMonitor.Visibility = Visibility.Collapsed;
                 
                 BtnAction.Content = "INICIAR ESCANEO";
-                BtnAction.Background = new SolidColorBrush(Color.FromRgb(46, 125, 50)); // Green
+                BtnAction.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 125, 50)); // Green
             }
         }
 
@@ -151,7 +156,7 @@ namespace NetworkScanner.UI
             ProgressPercentage.Text = "0%";
             StatusText.Text = "Iniciando escaneo...";
             TxtResultLog.Text = "";
-            SaveSettings(ipStart); // Guardamos IP de inicio como referencia
+            SaveSettings(ipStart, ipEnd); // Guardamos IP de inicio y fin como referencia
 
             try
             {
@@ -159,7 +164,7 @@ namespace NetworkScanner.UI
                 // Por ahora pasamos start como "subnet" para compatibilidad, 
                 // ScanController necesita update para start/end
                 string subnetPrefix = ipStart.Substring(0, ipStart.LastIndexOf('.') + 1); 
-                await _scanController.StartScanAsync(subnetPrefix, true);
+                await _scanController.StartScanAsync(subnetPrefix, ipStart, ipEnd, true);
             }
             catch (Exception ex)
             {
@@ -201,13 +206,13 @@ namespace NetworkScanner.UI
             {
                 _monitorController.StopMonitoring();
                 LblAgentStatus.Text = "Inactivo";
-                LblAgentStatus.Foreground = Brushes.Red;
+                LblAgentStatus.Foreground = System.Windows.Media.Brushes.Red;
             }
             else
             {
                 _monitorController.StartMonitoring();
                 LblAgentStatus.Text = "Activo (Enviando métricas)";
-                LblAgentStatus.Foreground = Brushes.Green;
+                LblAgentStatus.Foreground = System.Windows.Media.Brushes.Green;
                 
                 // Sugerencia de minimizar
                 // MessageBox.Show("El agente se está ejecutando. Puedes cerrar la ventana para minimizarlo.", "Agente Activo");
@@ -256,16 +261,48 @@ namespace NetworkScanner.UI
             catch { }
         }
 
-        private void SaveSettings(string ipStart)
+        private void SaveSettings(string ipStart, string ipEnd)
         {
             try
             {
                 string prefix = ipStart.Substring(0, ipStart.LastIndexOf('.') + 1);
-                var simpleConfig = new { ScannerSettings = new { SubnetPrefix = prefix } };
+                var simpleConfig = new 
+                { 
+                    ScannerSettings = new 
+                    { 
+                        SubnetPrefix = prefix,
+                        StartIP = ipStart,
+                        EndIP = ipEnd
+                    } 
+                };
                 string json = JsonSerializer.Serialize(simpleConfig, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(AppSettingsFile, json);
             }
             catch { }
+        }
+        private void ControlService(ServiceControllerStatus currentStatus)
+        {
+            const string serviceName = "NetworkScannerService";
+            try
+            {
+                using (var sc = new ServiceController(serviceName))
+                {
+                    if (currentStatus == ServiceControllerStatus.Stopped)
+                    {
+                        sc.Start();
+                        _notifyIcon?.ShowBalloonTip(3000, "Network Scanner", "Iniciando servicio...", System.Windows.Forms.ToolTipIcon.Info);
+                    }
+                    else
+                    {
+                        sc.Stop();
+                        _notifyIcon?.ShowBalloonTip(3000, "Network Scanner", "Deteniendo servicio...", System.Windows.Forms.ToolTipIcon.Info);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.Forms.MessageBox.Show($"Error al controlar servicio:\n{ex.Message}\nRequiere permisos de Admin.", "Error", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+            }
         }
     }
 }

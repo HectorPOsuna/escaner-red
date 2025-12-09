@@ -305,8 +305,15 @@ class Processor {
         foreach ($host['open_ports'] as $p) {
             $port = $p['port'];
             $protoName = $p['protocol'] ?? 'Unknown';
+            $category = $p['category'] ?? 'otro';
             
-            $protoId = $this->getOrCreateProtocolo($port, $protoName);
+            // Validar que la categoría sea válida según el ENUM, si no, fallback a 'otro'
+            $validCategories = ['seguro', 'inseguro', 'precaucion', 'inusual', 'esencial', 'base_de_datos', 'correo'];
+            if (!in_array($category, $validCategories)) {
+                $category = 'otro';
+            }
+            
+            $protoId = $this->getOrCreateProtocolo($port, $protoName, $category);
             $this->linkProtocolo($equipoId, $protoId, $port);
         }
     }
@@ -379,13 +386,13 @@ class Processor {
         }
     }
 
-    private function getOrCreateProtocolo($port, $nombre) {
+    private function getOrCreateProtocolo($port, $nombre, $categoria = 'otro') {
         $proto = $this->fetchOne("SELECT id_protocolo FROM protocolos WHERE numero = ? LIMIT 1", [$port]);
         if ($proto) return $proto['id_protocolo'];
 
-        $stmt = $this->pdo->prepare("INSERT INTO protocolos (numero, nombre, categoria, descripcion) VALUES (?, ?, 'otro', 'Auto-detected')");
+        $stmt = $this->pdo->prepare("INSERT INTO protocolos (numero, nombre, categoria, descripcion) VALUES (?, ?, ?, 'Auto-detected')");
         try {
-            $stmt->execute([$port, $nombre]);
+            $stmt->execute([$port, $nombre, $categoria]);
             return $this->pdo->lastInsertId();
         } catch (PDOException $e) {
             return null; // Fallback
@@ -422,27 +429,49 @@ try {
 
     writeLog("Request recibido: " . substr($inputJSON, 0, 100) . "...");
 
-    // Validar
-    $errors = [];
-    if (!validatePayload($input, $errors)) {
-        writeLog("Error de validación: " . implode(", ", $errors), 'WARNING');
-        sendResponse(false, 'Datos inválidos', ['errors' => $errors], 400);
+    // Validar y Enrutar
+    if (isset($input['type']) && $input['type'] === 'metrics') {
+        // --- PROCESAMIENTO DE MÉTRICAS (MONITOREO) ---
+        $metrics = $input['data'] ?? [];
+        if (empty($metrics)) {
+             sendResponse(false, 'Datos de métricas vacíos', [], 400);
+        }
+
+        // Aquí podríamos guardar en una tabla 'metricas_equipos'
+        // Por ahora, solo logueamos para verificar funcionamiento
+        writeLog("Métricas recibidas de {$metrics['Hostname']} ({$metrics['IP']}): CPU={$metrics['CpuUsage']}%, RAM={$metrics['RamAvailableMb']}MB", 'METRICS');
+
+        // Optional: Update device 'ultima_deteccion' based on IP
+        // $pdo = getDbConnection();
+        // $stmt = $pdo->prepare("UPDATE equipos SET ultima_deteccion = NOW() WHERE ip = ?");
+        // $stmt->execute([$metrics['IP']]);
+
+        sendResponse(true, 'Métricas recibidas correctamente');
+    }
+    else {
+        // --- PROCESAMIENTO DE ESCANEO (DEFAULT) ---
+        $errors = [];
+        if (!validatePayload($input, $errors)) {
+            writeLog("Error de validación: " . implode(", ", $errors), 'WARNING');
+            sendResponse(false, 'Datos inválidos', ['errors' => $errors], 400);
+        }
+
+        // Conectar BD
+        $pdo = getDbConnection();
+
+        // Normalizar
+        $data = normalizePayload($input);
+
+        // Procesar
+        $processor = new Processor($pdo);
+        $stats = $processor->process($data);
+
+        writeLog("Procesamiento completado. Processed: {$stats['processed']}, Conflicts: {$stats['conflicts']}, Errors: {$stats['errors']}");
+
+        // Respuesta Exitosa
+        sendResponse(true, 'Scan procesado correctamente', $stats);
     }
 
-    // Conectar BD
-    $pdo = getDbConnection();
-
-    // Normalizar
-    $data = normalizePayload($input);
-
-    // Procesar
-    $processor = new Processor($pdo);
-    $stats = $processor->process($data);
-
-    writeLog("Procesamiento completado. Processed: {$stats['processed']}, Conflicts: {$stats['conflicts']}, Errors: {$stats['errors']}");
-
-    // Respuesta Exitosa
-    sendResponse(true, 'Scan procesado correctamente', $stats);
 
 } catch (Exception $e) {
     writeLog("Excepción General: " . $e->getMessage(), 'CRITICAL');

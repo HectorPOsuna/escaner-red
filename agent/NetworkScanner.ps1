@@ -27,10 +27,6 @@ $EnableProgress = $false
 $ProgressFile = ""
 
 # Determinar archivo de configuración
-if ([string]::IsNullOrEmpty($ConfigFile)) {
-    $ConfigFile = Join-Path -Path $PSScriptRoot -ChildPath "config.ps1"
-}
-
 # Cargar configuración
 if (Test-Path $ConfigFile) {
     if ($ConfigFile.EndsWith(".json")) {
@@ -39,6 +35,9 @@ if (Test-Path $ConfigFile) {
             $JsonConfig = Get-Content $ConfigFile -Raw | ConvertFrom-Json
             
             if ($JsonConfig.SubnetPrefix) { $SubnetPrefix = $JsonConfig.SubnetPrefix }
+            if ($JsonConfig.StartIP) { $StartIP = $JsonConfig.StartIP }
+            if ($JsonConfig.EndIP) { $EndIP = $JsonConfig.EndIP }
+            
             if ($JsonConfig.OperationMode) { $OperationMode = $JsonConfig.OperationMode }
             if ($JsonConfig.EnableProgress) { $EnableProgress = $JsonConfig.EnableProgress }
             if ($JsonConfig.ProgressFile) { $ProgressFile = $JsonConfig.ProgressFile }
@@ -98,20 +97,22 @@ $PingTimeoutMs = 200
 
 # Lista de puertos por defecto
 $DefaultCommonPorts = @(
-    @{Port = 21; Protocol = "FTP" },
-    @{Port = 22; Protocol = "SSH" },
-    @{Port = 23; Protocol = "Telnet" },
-    @{Port = 25; Protocol = "SMTP" },
-    @{Port = 53; Protocol = "DNS" },
-    @{Port = 80; Protocol = "HTTP" },
-    @{Port = 110; Protocol = "POP3" },
-    @{Port = 143; Protocol = "IMAP" },
-    @{Port = 443; Protocol = "HTTPS" },
-    @{Port = 445; Protocol = "SMB" },
-    @{Port = 3306; Protocol = "MySQL" },
-    @{Port = 3389; Protocol = "RDP" },
-    @{Port = 5432; Protocol = "PostgreSQL" },
-    @{Port = 8080; Protocol = "HTTP-Alt" }
+    @{Port = 21; Protocol = "FTP"; Category = "Inseguro" },
+    @{Port = 22; Protocol = "SSH"; Category = "Seguro" },
+    @{Port = 23; Protocol = "Telnet"; Category = "Inseguro" },
+    @{Port = 25; Protocol = "SMTP"; Category = "Inseguro" },
+    @{Port = 53; Protocol = "DNS"; Category = "Precaucion" },
+    @{Port = 80; Protocol = "HTTP"; Category = "Inseguro" },
+    @{Port = 110; Protocol = "POP3"; Category = "Inseguro" },
+    @{Port = 143; Protocol = "IMAP"; Category = "Inseguro" },
+    @{Port = 443; Protocol = "HTTPS"; Category = "Seguro" },
+    @{Port = 445; Protocol = "SMB"; Category = "Precaucion" },
+    @{Port = 993; Protocol = "IMAPS"; Category = "Seguro" },
+    @{Port = 995; Protocol = "POP3S"; Category = "Seguro" },
+    @{Port = 3306; Protocol = "MySQL"; Category = "Precaucion" },
+    @{Port = 3389; Protocol = "RDP"; Category = "Precaucion" },
+    @{Port = 5432; Protocol = "PostgreSQL"; Category = "Precaucion" },
+    @{Port = 8080; Protocol = "HTTP-Alt"; Category = "Precaucion" }
 )
 
 $CommonPorts = $DefaultCommonPorts
@@ -304,9 +305,11 @@ function Get-OpenPorts {
             $TestResult = Test-NetConnection -ComputerName $IpAddress -Port $PortInfo.Port -WarningAction SilentlyContinue -ErrorAction SilentlyContinue -InformationLevel Quiet
             
             if ($TestResult) {
+                $Category = if ($PortInfo.Category) { $PortInfo.Category } else { "Inusual" }
                 $PortResult = [PSCustomObject]@{
                     Port       = $PortInfo.Port
                     Protocol   = $PortInfo.Protocol
+                    Category   = $Category
                     Status     = "Open"
                     DetectedAt = Get-Date -Format "HH:mm:ss"
                 }
@@ -370,6 +373,7 @@ function Test-PortInCache {
             return [PSCustomObject]@{
                 Port       = $Entry.Port
                 Protocol   = $Entry.Protocol
+                Category   = $Entry.Category
                 Status     = $Entry.Status
                 DetectedAt = $Entry.DetectedAt
             }
@@ -392,6 +396,7 @@ function Add-PortToCache {
         IP          = $IpAddress
         Port        = $PortInfo.Port
         Protocol    = $PortInfo.Protocol
+        Category    = $PortInfo.Category
         Status      = $PortInfo.Status
         LastScanned = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
         DetectedAt  = $PortInfo.DetectedAt
@@ -494,7 +499,7 @@ $PortCache = Read-PortCache
 Write-Host "Cache cargado: $($PortCache.Count) entradas." -ForegroundColor Green
 
 Write-Host "Generando lista de objetivos..." -ForegroundColor Yellow
-$TargetIps = Get-IpRange -Prefix $SubnetPrefix
+$TargetIps = Get-IpRange -Prefix $SubnetPrefix -StartIP $StartIP -EndIP $EndIP
 Write-Host "Objetivos generados: $($TargetIps.Count) direcciones." -ForegroundColor Green
 
 $Results = @()
@@ -588,18 +593,23 @@ $ApiPayload = @{
 }
 
 foreach ($HostObj in $ActiveHosts) {
-    # Convertir puertos a string
-    $PortsString = ""
+    # Convertir puertos a array de objetos
+    $OpenPortsArray = @()
     if ($HostObj.OpenPorts) {
-        $PortNumbers = $HostObj.OpenPorts | ForEach-Object { $_.Port }
-        $PortsString = ($PortNumbers -join ",")
+        foreach ($Port in $HostObj.OpenPorts) {
+            $OpenPortsArray += @{
+                port     = $Port.Port
+                protocol = $Port.Protocol
+                category = $Port.Category
+            }
+        }
     }
     
     $ApiPayload.Devices += @{
         IP        = $HostObj.IP
         MAC       = if ($HostObj.MacAddress) { $HostObj.MacAddress } else { "" }
         Hostname  = $HostObj.Hostname
-        OpenPorts = $PortsString
+        OpenPorts = $OpenPortsArray
     }
 }
 
@@ -659,6 +669,7 @@ if (-not $ApiSuccess) {
                 $OpenPortsArray += @{
                     port        = $Port.Port
                     protocol    = $Port.Protocol
+                    category    = $Port.Category
                     detected_at = $Port.DetectedAt
                 }
             }

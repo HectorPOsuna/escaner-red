@@ -2,6 +2,24 @@
 
 Sistema integral de monitoreo de red que combina un potente agente de escaneo en PowerShell con un backend en **PHP** para detectar dispositivos, identificar fabricantes y alertar sobre conflictos de IP/MAC en tiempo real.
 
+### 🖥️ Aplicación de Bandeja (System Tray)
+
+La solución incluye una aplicación gráfica (`NetworkScannerUI`) que se ejecuta en la bandeja del sistema para monitorear el servicio.
+
+**Características:**
+- Icono en el área de notificaciones
+- Menú contextual para Iniciar/Detener el servicio
+- Acceso rápido a los Logs
+- Indicador visual de estado
+
+**Instalación (Auto-arranque):**
+Para que la UI inicie automáticamente con Windows:
+1. Copia el ejecutable `NetworkScannerUI.exe` a una ruta permanente.
+2. Crea un acceso directo en `shell:startup` O agrega una clave de registro en:
+   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+   Nombre: `NetworkScannerUI`
+   Valor: `"C:\Ruta\A\NetworkScannerUI.exe"`
+
 ## 🚀 Características Principales
 
 *   **Escaneo Inteligente**: Agente PowerShell optimizado con ejecución en paralelo y caché de puertos.
