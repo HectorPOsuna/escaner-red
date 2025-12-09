@@ -10,7 +10,7 @@ $OperationMode = "hybrid"
 
 # Configuración de API
 $ApiEnabled = $true
-$ApiUrl = "http://dsantana.fimaz.uas.edu.mx/server/api/receive.php"
+$ApiUrl = "https://dsantana.fimaz.uas.edu.mx/lisi3309/server/api/receive.php"
 $ApiTimeout = 10  # segundos
 $ApiRetries = 3
 $ApiRetryDelay = 2  # segundos entre reintentos
