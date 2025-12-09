@@ -34,8 +34,28 @@ CREATE TABLE IF NOT EXISTS protocolos (
     id_protocolo INT AUTO_INCREMENT PRIMARY KEY COMMENT 'ID único del protocolo',
     numero INT NOT NULL COMMENT 'Número de puerto estándar (ej. 80, 443)',
     nombre VARCHAR(50) NOT NULL COMMENT 'Nombre del protocolo (ej. HTTP, SSH)',
-    categoria ENUM('seguro', 'inseguro', 'precaucion', 'inusual', 'esencial', 'base_de_datos', 'correo') 
-        DEFAULT 'inusual' NOT NULL COMMENT 'Clasificación de seguridad o tipo de servicio',
+    -- En la tabla protocolos, actualiza el ENUM:
+categoria ENUM(
+    'seguro',           -- Protocolos cifrados/seguros
+    'inseguro',         -- Protocolos sin cifrado
+    'precaucion',       -- Potencialmente peligrosos pero necesarios
+    'inusual',          -- Poco común/servicios especializados
+    'esencial',         -- Servicios esenciales de red
+    'base_de_datos',    -- Bases de datos
+    'correo',           -- Servicios de correo
+    'gestion',          -- Gestión/administración
+    'multimedia',       -- Streaming/media
+    'juegos',           -- Juegos en línea
+    'voz_ip',           -- VoIP
+    'archivos',         -- Compartición de archivos
+    'remoto',           -- Acceso remoto
+    'virtualizacion',   -- Virtualización/containers
+    'monitoreo',        -- Monitoreo/SNMP
+    'impresion',        -- Impresión
+    'backup',           -- Backup/sincronización
+    'desarrollo',       -- Desarrollo/depuración
+    'reservado'         -- Puertos reservados/IANA
+    )DEFAULT 'inusual' NOT NULL COMMENT 'Clasificación de seguridad o tipo de servicio',
     descripcion TEXT NULL COMMENT 'Descripción detallada del protocolo',
     CONSTRAINT uk_protocolo_numero UNIQUE (numero),
     INDEX idx_protocolos_numero (numero),
