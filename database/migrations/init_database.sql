@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS protocolos (
     numero INT NOT NULL COMMENT 'Número de puerto estándar (ej. 80, 443)',
     nombre VARCHAR(50) NOT NULL COMMENT 'Nombre del protocolo (ej. HTTP, SSH)',
     categoria ENUM('seguro', 'inseguro', 'precaucion', 'inusual', 'esencial', 'base_de_datos', 'correo') 
-        DEFAULT 'otro' NOT NULL COMMENT 'Clasificación de seguridad o tipo de servicio',
+        DEFAULT 'inusual' NOT NULL COMMENT 'Clasificación de seguridad o tipo de servicio',
     descripcion TEXT NULL COMMENT 'Descripción detallada del protocolo',
     CONSTRAINT uk_protocolo_numero UNIQUE (numero),
     INDEX idx_protocolos_numero (numero),
