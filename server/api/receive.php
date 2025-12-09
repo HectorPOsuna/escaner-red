@@ -1,134 +1,452 @@
 <?php
 /**
- * API REST - Recepción de Datos de Escaneo
+ * API REST Unificada - Monitor de Red
  * 
- * Endpoint: POST /api/receive.php
- * Content-Type: application/json
- * 
- * Formato esperado:
- * {
- *   "Devices": [
- *     {
- *       "IP": "192.168.1.100",
- *       "MAC": "AA:BB:CC:DD:EE:FF",
- *       "Hostname": "PC-EJEMPLO",
- *       "OpenPorts": "80,443,3306"
- *     }
- *   ]
- * }
+ * Unificación de:
+ * - Conexión DB
+ * - Carga de .env
+ * - Validación de Payload
+ * - Procesamiento de Escaneo
+ * - Detección de Conflictos
+ * - Logging
  */
 
-// Headers CORS y JSON
+// -----------------------------------------------------------------------------
+// 1. CONFIGURACIÓN Y HEADERS
+// -----------------------------------------------------------------------------
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 
-// Manejar preflight OPTIONS
+// Manejo de preflight request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
 }
 
-// Solo aceptar POST
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
+// Configuración de errores (ocultar errores PHP nativos en respuesta, logearlos)
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+
+// Rutas
+$baseDir = __DIR__; // server/api
+$rootDir = dirname(dirname($baseDir)); // root del proyecto
+$logDir  = $rootDir . '/logs';
+$logFile = $logDir . '/api_requests.log';
+
+// -----------------------------------------------------------------------------
+// 2. HELPERS (Logging, Env, Response)
+// -----------------------------------------------------------------------------
+
+function writeLog($message, $type = 'INFO') {
+    global $logFile, $logDir;
+    
+    // Crear directorio logs si no existe
+    if (!file_exists($logDir)) {
+        mkdir($logDir, 0755, true);
+    }
+
+    $timestamp = date('Y-m-d H:i:s');
+    $entry = "[$timestamp] [$type] $message" . PHP_EOL;
+    file_put_contents($logFile, $entry, FILE_APPEND);
+}
+
+function sendResponse($success, $message, $data = [], $code = 200) {
+    http_response_code($code);
     echo json_encode([
-        'success' => false,
-        'message' => 'Método no permitido. Use POST.'
+        'success' => $success,
+        'message' => $message,
+        'data' => $data
     ]);
     exit;
 }
 
-// Cargar dependencias
-require_once __DIR__ . '/ApiValidator.php';
-require_once __DIR__ . '/../ScanProcessor.php';
-
-// Función de logging
-function logRequest($message, $data = null) {
-    $logFile = __DIR__ . '/../../logs/api_requests.log';
-    $logDir = dirname($logFile);
-    
-    if (!is_dir($logDir)) {
-        @mkdir($logDir, 0755, true);
+// Cargar variables de entorno MANUALMENTE
+function loadEnv($path) {
+    if (!file_exists($path)) {
+        throw new Exception("Archivo .env no encontrado en: $path");
     }
     
-    $timestamp = date('Y-m-d H:i:s');
-    $logEntry = "[$timestamp] $message";
-    
-    if ($data !== null) {
-        $logEntry .= " | Data: " . json_encode($data);
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0) continue;
+        
+        // Separar clave=valor
+        if (strpos($line, '=') !== false) {
+            list($name, $value) = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value);
+            // Eliminar comillas si existen
+            $value = trim($value, "\"'");
+            
+            $_ENV[$name] = $value;
+        }
     }
-    
-    $logEntry .= PHP_EOL;
-    
-    @file_put_contents($logFile, $logEntry, FILE_APPEND);
 }
+
+// -----------------------------------------------------------------------------
+// 3. CONEXIÓN BASE DE DATOS
+// -----------------------------------------------------------------------------
+
+function getDbConnection() {
+    global $rootDir;
+    
+    $envPath = $rootDir . '/.env';
+    loadEnv($envPath);
+
+    $host = $_ENV['DB_HOST'] ?? 'localhost';
+    $port = $_ENV['DB_PORT'] ?? 3306;
+    $db   = $_ENV['DB_NAME'] ?? 'red_monitor';
+    $user = $_ENV['DB_USER'] ?? 'root';
+    $pass = $_ENV['DB_PASSWORD'] ?? '';
+    $charset = 'utf8mb4';
+
+    $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=$charset";
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ];
+
+    try {
+        return new PDO($dsn, $user, $pass, $options);
+    } catch (PDOException $e) {
+        writeLog("Error de conexión DB: " . $e->getMessage(), 'CRITICAL');
+        throw new Exception("Error conectando a la base de datos");
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 4. LÓGICA DE VALIDACIÓN
+// -----------------------------------------------------------------------------
+
+function validatePayload($data, &$errors) {
+    if (!isset($data['Devices']) || !is_array($data['Devices'])) {
+        $errors[] = "Campo 'Devices' requerido y debe ser un array";
+        return false;
+    }
+
+    if (empty($data['Devices'])) {
+        $errors[] = "El array 'Devices' no puede estar vacío";
+        return false;
+    }
+
+    foreach ($data['Devices'] as $index => $device) {
+        // Validar IP
+        if (empty($device['IP'])) {
+            $errors[] = "Dispositivo #$index: IP requerida";
+        } elseif (!filter_var($device['IP'], FILTER_VALIDATE_IP)) {
+            $errors[] = "Dispositivo #$index: IP inválida '{$device['IP']}'";
+        }
+
+        // Validar MAC (si existe)
+        if (!empty($device['MAC'])) {
+            // Regex simple para MAC: acepta : o -
+            if (!preg_match('/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/', $device['MAC'])) {
+                $errors[] = "Dispositivo #$index: MAC inválida '{$device['MAC']}'";
+            }
+        }
+    }
+
+    return empty($errors);
+}
+
+function normalizePayload($data) {
+    $hosts = [];
+    
+    // Detectar subred básica (simple inferencia)
+    $subnet = '0.0.0.0/0';
+    if (!empty($data['Devices'][0]['IP'])) {
+        $parts = explode('.', $data['Devices'][0]['IP']);
+        array_pop($parts);
+        $subnet = implode('.', $parts) . '.0/24';
+    }
+
+    foreach ($data['Devices'] as $device) {
+        $ip = $device['IP'];
+        $mac = isset($device['MAC']) ? strtoupper(str_replace('-', ':', $device['MAC'])) : null;
+        $hostname = $device['Hostname'] ?? 'Desconocido';
+        $openPortsRaw = $device['OpenPorts'] ?? '';
+        
+        // Parsear puertos
+        $ports = [];
+        if (is_array($openPortsRaw)) {
+            $ports = $openPortsRaw;
+        } elseif (is_string($openPortsRaw) && !empty($openPortsRaw)) {
+            $parts = explode(',', $openPortsRaw);
+            foreach ($parts as $p) {
+                $p = trim($p);
+                if (is_numeric($p)) {
+                    $ports[] = ['port' => intval($p), 'protocol' => 'Unknown'];
+                }
+            }
+        }
+
+        $hosts[] = [
+            'ip' => $ip,
+            'mac' => $mac,
+            'hostname' => $hostname,
+            'manufacturer' => 'Desconocido', // Será resuelto por OUI después
+            'os' => 'Unknown',
+            'open_ports' => $ports
+        ];
+    }
+
+    return [
+        'scan_timestamp' => date('Y-m-d\TH:i:s'),
+        'subnet' => $subnet,
+        'hosts' => $hosts
+    ];
+}
+
+// -----------------------------------------------------------------------------
+// 5. CLASE DE PROCESAMIENTO (Micro-ORM Embebido)
+// -----------------------------------------------------------------------------
+
+class Processor {
+    private $pdo;
+    private $stats = ['processed' => 0, 'conflicts' => 0, 'errors' => 0];
+
+    public function __construct($pdo) {
+        $this->pdo = $pdo;
+    }
+
+    public function process($scanData) {
+        foreach ($scanData['hosts'] as $host) {
+            try {
+                $this->pdo->beginTransaction();
+
+                // 1. Detección de Conflictos
+                $this->detectConflicts($host);
+
+                // 2. Persistir Host
+                $this->persistHost($host);
+
+                $this->pdo->commit();
+                $this->stats['processed']++;
+            } catch (Exception $e) {
+                $this->pdo->rollBack();
+                $this->stats['errors']++;
+                writeLog("Error procesando IP {$host['ip']}: " . $e->getMessage(), 'ERROR');
+            }
+        }
+        return $this->stats;
+    }
+
+    // --- Lógica de Negocio ---
+
+    private function detectConflicts($host) {
+        $ip = $host['ip'];
+        $mac = $host['mac'];
+        $hostname = $host['hostname'];
+
+        if ($ip) {
+            $existing = $this->fetchOne("SELECT * FROM equipos WHERE ip = ?", [$ip]);
+            if ($existing) {
+                // Conflicto de IP (Misma IP, diferente MAC = posible suplantación o cambio de tarjeta)
+                if ($mac && $existing['mac'] && $mac !== $existing['mac']) {
+                    $this->registrarConflicto($ip, $mac, $hostname, 
+                        "Conflicto de IP: Asignada a {$existing['hostname']} ({$existing['mac']}) pero detectada en $hostname ($mac)");
+                }
+                // Conflicto de Hostname (Misma IP, diferente Hostname = cambio de nombre o DNS issue)
+                elseif ($hostname && $existing['hostname'] && $hostname !== $existing['hostname']) {
+                    // Solo si no es el mismo dispositivo (verificado por MAC)
+                    if (!$mac || !$existing['mac'] || $mac !== $existing['mac']) {
+                         $this->registrarConflicto($ip, $mac, $hostname, 
+                        "Conflicto de Hostname: IP $ip cambió de {$existing['hostname']} a $hostname");
+                    }
+                }
+            }
+        }
+
+        if ($mac) {
+            $existing = $this->fetchOne("SELECT * FROM equipos WHERE mac = ?", [$mac]);
+            if ($existing) {
+                // Conflicto de MAC (Misma MAC, diferente Hostname = cambio de nombre)
+                if ($hostname && $existing['hostname'] && $hostname !== $existing['hostname']) {
+                    $this->registrarConflicto($ip, $mac, $hostname, 
+                        "Conflicto de MAC: Dispositivo $mac cambió nombre de {$existing['hostname']} a $hostname");
+                }
+            }
+        }
+    }
+
+    private function persistHost($host) {
+        $ip = $host['ip'];
+        $mac = $host['mac'];
+        $hostname = $host['hostname'];
+        $osName = $host['os'] ?? 'Unknown';
+        
+        // Fabricante (OUI)
+        $fabricanteId = null;
+        if ($mac) {
+            $oui = substr(str_replace([':', '-'], '', $mac), 0, 6);
+            $fab = $this->fetchOne("SELECT id_fabricante FROM fabricantes WHERE oui_mac = ?", [$oui]);
+            if ($fab) {
+                $fabricanteId = $fab['id_fabricante'];
+            } else {
+                // Crear fabricante por defecto
+                $fabricanteId = $this->createFabricante('Desconocido', $oui);
+            }
+        } else {
+            // ID 1 suele ser desconocido en seeds
+            $fabricanteId = 1; 
+        }
+
+        // Sistema Operativo
+        $soId = $this->getOrCreateSO($osName);
+
+        // Upsert Equipo
+        $equipoId = $this->upsertEquipo($hostname, $ip, $mac, $soId, $fabricanteId);
+
+        // Protocolos
+        foreach ($host['open_ports'] as $p) {
+            $port = $p['port'];
+            $protoName = $p['protocol'] ?? 'Unknown';
+            
+            $protoId = $this->getOrCreateProtocolo($port, $protoName);
+            $this->linkProtocolo($equipoId, $protoId, $port);
+        }
+    }
+
+    // --- Helpers SQL ---
+
+    private function fetchOne($sql, $params) {
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetch();
+    }
+
+    private function registrarConflicto($ip, $mac, $host, $desc) {
+        $sql = "INSERT INTO conflictos (ip, mac, hostname_conflictivo, descripcion, estado, fecha_detectado) 
+                VALUES (?, ?, ?, ?, 'detectado', NOW())";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([$ip, $mac, $host, $desc]);
+        $this->stats['conflicts']++;
+    }
+
+    private function createFabricante($nombre, $oui) {
+        try {
+            $stmt = $this->pdo->prepare("INSERT INTO fabricantes (nombre, oui_mac) VALUES (?, ?)");
+            $stmt->execute([$nombre, $oui]);
+            return $this->pdo->lastInsertId();
+        } catch (PDOException $e) {
+            // Si falla, recuperar el ID default 1
+            return 1;
+        }
+    }
+
+    private function getOrCreateSO($nombre) {
+        $so = $this->fetchOne("SELECT id_so FROM sistemas_operativos WHERE nombre = ?", [$nombre]);
+        if ($so) return $so['id_so'];
+
+        $stmt = $this->pdo->prepare("INSERT INTO sistemas_operativos (nombre) VALUES (?)");
+        $stmt->execute([$nombre]);
+        return $this->pdo->lastInsertId();
+    }
+
+    private function upsertEquipo($hostname, $ip, $mac, $soId, $fabId) {
+        // Intentar actualizar por IP primero
+        $existing = $this->fetchOne("SELECT id_equipo FROM equipos WHERE ip = ?", [$ip]);
+        
+        if ($existing) {
+            $sql = "UPDATE equipos SET hostname = ?, mac = ?, id_so = ?, fabricante_id = ?, ultima_deteccion = NOW() WHERE ip = ?";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute([$hostname, $mac, $soId, $fabId, $ip]);
+            return $existing['id_equipo'];
+        } else {
+            // Insertar o manejar duplicado de MAC
+            try {
+                $sql = "INSERT INTO equipos (hostname, ip, mac, id_so, fabricante_id, ultima_deteccion) 
+                        VALUES (?, ?, ?, ?, ?, NOW())";
+                $stmt = $this->pdo->prepare($sql);
+                $stmt->execute([$hostname, $ip, $mac, $soId, $fabId]);
+                return $this->pdo->lastInsertId();
+            } catch (PDOException $e) {
+                // Error 23000 es violación de constraint (probablemente MAC duplicada)
+                if ($e->getCode() == 23000 && strpos($e->getMessage(), 'mac') !== false) {
+                    $sql = "UPDATE equipos SET hostname = ?, ip = ?, id_so = ?, fabricante_id = ?, ultima_deteccion = NOW() WHERE mac = ?";
+                    $stmt = $this->pdo->prepare($sql);
+                    $stmt->execute([$hostname, $ip, $soId, $fabId, $mac]);
+                    
+                    $rec = $this->fetchOne("SELECT id_equipo FROM equipos WHERE mac = ?", [$mac]);
+                    return $rec['id_equipo'];
+                }
+                throw $e;
+            }
+        }
+    }
+
+    private function getOrCreateProtocolo($port, $nombre) {
+        $proto = $this->fetchOne("SELECT id_protocolo FROM protocolos WHERE numero = ? LIMIT 1", [$port]);
+        if ($proto) return $proto['id_protocolo'];
+
+        $stmt = $this->pdo->prepare("INSERT INTO protocolos (numero, nombre, categoria, descripcion) VALUES (?, ?, 'otro', 'Auto-detected')");
+        try {
+            $stmt->execute([$port, $nombre]);
+            return $this->pdo->lastInsertId();
+        } catch (PDOException $e) {
+            return null; // Fallback
+        }
+    }
+
+    private function linkProtocolo($equipoId, $protoId, $port) {
+        if (!$protoId) return;
+        $sql = "INSERT INTO protocolos_usados (id_equipo, id_protocolo, puerto_detectado, fecha_hora, estado) 
+                VALUES (?, ?, ?, NOW(), 'activo') 
+                ON DUPLICATE KEY UPDATE fecha_hora = NOW()";
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute([$equipoId, $protoId, $port]);
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 6. FLUJO PRINCIPAL
+// -----------------------------------------------------------------------------
 
 try {
-    // Leer el cuerpo de la petición
-    $rawInput = file_get_contents('php://input');
-    
-    if (empty($rawInput)) {
-        throw new Exception('Cuerpo de la petición vacío');
+    // Verificar método
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        sendResponse(false, 'Método no permitido. Use POST.', [], 405);
     }
 
-    // Decodificar JSON
-    $inputData = json_decode($rawInput, true);
-    
+    // Leer Body
+    $inputJSON = file_get_contents('php://input');
+    $input = json_decode($inputJSON, true);
+
     if (json_last_error() !== JSON_ERROR_NONE) {
-        throw new Exception('JSON inválido: ' . json_last_error_msg());
+        sendResponse(false, 'JSON Malformado', [], 400);
     }
 
-    logRequest('Petición recibida', [
-        'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
-        'devices_count' => count($inputData['Devices'] ?? [])
-    ]);
+    writeLog("Request recibido: " . substr($inputJSON, 0, 100) . "...");
 
-    // Validar payload
-    $validator = new ApiValidator();
-    
-    if (!$validator->validateScanPayload($inputData)) {
-        $errors = $validator->getErrors();
-        logRequest('Validación fallida', $errors);
-        
-        http_response_code(400);
-        echo json_encode([
-            'success' => false,
-            'message' => 'Datos inválidos',
-            'errors' => $errors
-        ]);
-        exit;
+    // Validar
+    $errors = [];
+    if (!validatePayload($input, $errors)) {
+        writeLog("Error de validación: " . implode(", ", $errors), 'WARNING');
+        sendResponse(false, 'Datos inválidos', ['errors' => $errors], 400);
     }
 
-    // Normalizar al formato interno
-    $normalizedData = $validator->normalizePayload($inputData);
+    // Conectar BD
+    $pdo = getDbConnection();
 
-    // Procesar datos usando ScanProcessor
-    $processor = new ScanProcessor();
-    $results = $processor->processScanData($normalizedData);
+    // Normalizar
+    $data = normalizePayload($input);
 
-    logRequest('Procesamiento exitoso', $results);
+    // Procesar
+    $processor = new Processor($pdo);
+    $stats = $processor->process($data);
 
-    // Respuesta exitosa
-    http_response_code(200);
-    echo json_encode([
-        'success' => true,
-        'message' => 'Datos recibidos correctamente',
-        'summary' => [
-            'processed' => $results['processed'],
-            'conflicts' => $results['conflicts'],
-            'errors' => $results['errors']
-        ]
-    ]);
+    writeLog("Procesamiento completado. Processed: {$stats['processed']}, Conflicts: {$stats['conflicts']}, Errors: {$stats['errors']}");
+
+    // Respuesta Exitosa
+    sendResponse(true, 'Scan procesado correctamente', $stats);
 
 } catch (Exception $e) {
-    logRequest('Error fatal', ['error' => $e->getMessage()]);
-    
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'message' => 'Error del servidor: ' . $e->getMessage()
-    ]);
+    writeLog("Excepción General: " . $e->getMessage(), 'CRITICAL');
+    sendResponse(false, 'Error interno del servidor', ['error' => $e->getMessage()], 500);
 }
+
 ?>
