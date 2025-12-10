@@ -32,27 +32,45 @@ export default class LoginView {
     }
 
     async handleSubmit(e) {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData.entries());
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        const res = await fetch('./api/auth/login.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
         
+        // 1. Primero verificar el estado HTTP
+        console.log("Status:", res.status, "OK?", res.ok);
+        
+        // 2. Obtener el texto de la respuesta (antes de parsear JSON)
+        const responseText = await res.text();
+        console.log("Raw response:", responseText);
+        
+        // 3. Intentar parsear como JSON
+        let json;
         try {
-            const res = await fetch('./api/auth/login.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            
-            const json = await res.json();
-            
-            if (res.ok && json.success) {
-                this.app.user = json.user;
-                this.app.router('/dashboard');
-            } else {
-                this.app.toast(json.error || 'Error de login', 'danger');
-            }
-        } catch (err) {
-            this.app.toast('Error de red', 'danger');
+            json = JSON.parse(responseText);
+        } catch (parseError) {
+            console.error("Error parsing JSON:", parseError);
+            console.error("Response was:", responseText);
+            this.app.toast('Respuesta inválida del servidor', 'danger');
+            return;
         }
+        
+        // 4. Verificar respuesta
+        if (res.ok && json.success) {
+            this.app.user = json.user;
+            this.app.router('/dashboard');
+        } else {
+            this.app.toast(json.error || 'Error de login', 'danger');
+        }
+    } catch (err) {
+        console.error("Network error:", err);
+        this.app.toast('Error de red: ' + err.message, 'danger');
+    }
     }
 }
