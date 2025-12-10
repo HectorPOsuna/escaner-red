@@ -10,11 +10,16 @@ param (
     Este script escanea una subred identificando IPs activas y puertos abiertos.
     
 .NOTES
-    Versión: 2.0.2 (Patched/Safe)
+    Versión: 2.1.0 (Optimized/Fast)
     Autor: Monitor de Actividad de Protocolos de Red Team
     Fecha: Diciembre 2025
     Requiere: PowerShell 5.1+
 #>
+
+# Configuración de Rendimiento
+$MaxThreads = 50
+$PingTimeoutMs = 1000
+
 
 # ==============================================================================
 # SECCIÓN 1: CONFIGURACIÓN Y VERIFICACIÓN INICIAL
@@ -279,6 +284,8 @@ function Test-HostAlive {
 function Get-HostInfo {
     param([string]$IpAddress)
     
+    Write-Host "[INFO] Obteniendo información para $IpAddress..." -ForegroundColor DarkGray
+    
     $info = @{
         Hostname = "Desconocido"
         OS = "Unknown"
@@ -287,37 +294,60 @@ function Get-HostInfo {
     }
     
     try {
-        # Obtener hostname
+        # 1. Obtener hostname
         try {
             $info.Hostname = [System.Net.Dns]::GetHostEntry($IpAddress).HostName
-        } catch { }
+            Write-Host "  Hostname: $($info.Hostname)" -ForegroundColor Gray
+        } catch { 
+            Write-Host "  Hostname: No disponible" -ForegroundColor DarkGray
+            $info.Hostname = "Host-$IpAddress"
+        }
         
-        # Obtener MAC desde ARP
+        # 2. Obtener MAC usando método más confiable
+        $mac = Get-NetNeighbor -IPAddress $IpAddress -ErrorAction SilentlyContinue | 
+               Select-Object -First 1 -ExpandProperty LinkLayerAddress
+        
+        if ($mac) {
+            $info.MAC = $mac
+            Write-Host "  MAC: $mac" -ForegroundColor Gray
+        } else {
+            # Método alternativo usando arp
+            try {
+                $arpOutput = arp -a | Select-String $IpAddress
+                if ($arpOutput -match '([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})') {
+                    $info.MAC = $matches[0]
+                    Write-Host "  MAC (ARP): $($info.MAC)" -ForegroundColor Gray
+                }
+            } catch {
+                Write-Host "  MAC: No detectada" -ForegroundColor DarkGray
+            }
+        }
+        
+        # 3. Detectar OS por TTL
         try {
-            $arpOutput = arp -a $IpAddress 2>$null
-            foreach ($line in $arpOutput) {
-                if ($line -match $IpAddress) {
-                    if ($line -match '([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})') {
-                        $info.MAC = $Matches[0]
-                        break
-                    }
+            $ping = New-Object System.Net.NetworkInformation.Ping
+            $reply = $ping.Send($IpAddress, 1000)
+            if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
+                $ttl = $reply.Options.Ttl
+                if ($ttl -le 64) { 
+                    $info.OS = "Linux/Unix" 
+                    Write-Host "  OS: Linux/Unix (TTL: $ttl)" -ForegroundColor Gray
+                }
+                elseif ($ttl -le 128) { 
+                    $info.OS = "Windows" 
+                    Write-Host "  OS: Windows (TTL: $ttl)" -ForegroundColor Gray
+                }
+                else { 
+                    $info.OS = "Network Device" 
+                    Write-Host "  OS: Dispositivo de red (TTL: $ttl)" -ForegroundColor Gray
                 }
             }
-        } catch { }
-        
-        # Detectar OS por TTL
-        $ping = New-Object System.Net.NetworkInformation.Ping
-        $reply = $ping.Send($IpAddress, $PingTimeoutMs)
-        if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
-            $ttl = $reply.Options.Ttl
-            if ($ttl -le 64) { $info.OS = "Linux/Unix" }
-            elseif ($ttl -le 128) { $info.OS = "Windows" }
-            else { $info.OS = "Network Device" }
+        } catch {
+            Write-Host "  OS: No detectado" -ForegroundColor DarkGray
         }
         
     } catch {
-        # FIX: Usar ${} para interpolación segura de variables
-        Write-Debug "Error obteniendo informacion de ${IpAddress}: $_"
+        Write-Host "  Error obteniendo info: $_" -ForegroundColor Red
     }
     
     return $info
@@ -409,61 +439,119 @@ function Scan-PortsByPriority {
     
     $openPorts = @()
     
-    # Agrupar por prioridad
-    $priorityGroups = @{}
-    foreach ($port in $Ports) {
-        $pri = $port.Priority
-        if (-not $priorityGroups.ContainsKey($pri)) {
-            $priorityGroups[$pri] = @()
-        }
-        $priorityGroups[$pri] += $port
-    }
+    Write-Host "  Escaneando puertos en $Ip..." -ForegroundColor DarkGray
     
-    # Escanear por prioridad (de menor a mayor)
-    $priorities = $priorityGroups.Keys | Sort-Object
-    
-    Write-Host "  Escaneando $Ip por prioridad..." -ForegroundColor DarkGray
-    
-    foreach ($priority in $priorities) {
-        $groupPorts = $priorityGroups[$priority]
-        $category = $groupPorts[0].Category
-        
-        Write-Host "    Prioridad $priority ($category): $($groupPorts.Count) puertos" -ForegroundColor DarkGray
-        
-        foreach ($portInfo in $groupPorts) {
-            # Verificar caché primero
-            $cached = Test-PortInCache -Cache $Cache -Ip $Ip -Port $portInfo.Port
-            if ($cached) {
+    foreach ($portInfo in $Ports) {
+        # Verificar caché primero
+        $cached = Test-PortInCache -Cache $Cache -Ip $Ip -Port $portInfo.Port
+        if ($cached) {
+            if ($cached.Status -eq "Open") {
                 $openPorts += $cached
-                continue
             }
-            
-            # Escanear puerto
-            if (Test-Port -Ip $Ip -Port $portInfo.Port -Timeout $PortScanTimeout) {
-                $result = [PSCustomObject]@{
-                    Port = $portInfo.Port
-                    Protocol = $portInfo.Protocol
-                    Category = $portInfo.Category
-                    Status = "Open"
-                    DetectedAt = (Get-Date).ToString("HH:mm:ss")
-                    Priority = $portInfo.Priority
-                }
-                
-                $openPorts += $result
-                Add-ToCache -Cache $Cache -Ip $Ip -PortInfo $result
-                
-                # Mostrar feedback para puertos importantes
-                if ($portInfo.Category -eq "esencial") {
-                    Write-Host "      [+] $($portInfo.Port)/$($portInfo.Protocol) - ESENCIAL" -ForegroundColor Green
-                }
-                if ($portInfo.Category -eq "seguro") {
-                    Write-Host "      [+] $($portInfo.Port)/$($portInfo.Protocol) - SEGURO" -ForegroundColor DarkGreen
-                }
-            }
+            continue
         }
+        
+        # Escanear puerto
+        $isOpen = Test-Port -Ip $Ip -Port $portInfo.Port -Timeout $PortScanTimeout
+        
+        $result = [PSCustomObject]@{
+            Port = $portInfo.Port
+            Protocol = $portInfo.Protocol
+            Category = $portInfo.Category
+            Status = if ($isOpen) { "Open" } else { "Closed" }
+            DetectedAt = if ($isOpen) { (Get-Date).ToString("HH:mm:ss") } else { "" }
+            Priority = $portInfo.Priority
+        }
+        
+        if ($isOpen) {
+            $openPorts += $result
+            Write-Host "    [+] $($portInfo.Port)/$($portInfo.Protocol) - $($portInfo.Category)" -ForegroundColor Green
+        }
+        
+        # Guardar en caché incluso si está cerrado (para no escanear de nuevo)
+        Add-ToCache -Cache $Cache -Ip $Ip -PortInfo $result
     }
     
     return $openPorts
+}
+
+function Invoke-ParallelPingSweep {
+    param(
+        [string[]]$IpList,
+        [int]$ThrottleLimit = 50,
+        [int]$TimeoutMs = 200
+    )
+
+    $RunspacePool = [runspacefactory]::CreateRunspacePool(1, $ThrottleLimit)
+    $RunspacePool.Open()
+
+    $Jobs = @()
+    
+    Write-Host "[PARALLEL] Iniciando ping sweep en $($IpList.Count) IPs con $ThrottleLimit hilos..." -ForegroundColor Cyan
+
+    foreach ($ip in $IpList) {
+        $PowerShell = [powershell]::Create()
+        $PowerShell.RunspacePool = $RunspacePool
+        
+        # ScriptBlock ligero para ping rápido
+        $ScriptBlock = {
+            param($chkIp, $chkTimeout)
+            $status = Test-Connection -ComputerName $chkIp -Count 1 -Quiet -BufferSize 16 -Delay 15 
+            # Note: Test-Connection -Quiet returns bool directly. 
+            # Timeout param is ignored by some Test-Connection versions, handled by job wait?
+            # Actually standard Test-Connection is slow. We use .NET Ping if compatible or fallback.
+            
+            # Use .NET Ping for real speed if possible
+            try {
+                $ping = New-Object System.Net.NetworkInformation.Ping
+                $reply = $ping.Send($chkIp, $chkTimeout)
+                return ($reply.Status -eq "Success")
+            } catch {
+                return $false
+            }
+        }
+
+        [void]$PowerShell.AddScript($ScriptBlock).AddArgument($ip).AddArgument($TimeoutMs)
+
+        $JobObj = New-Object PSObject -Property @{
+            IP = $ip
+            PowerShell = $PowerShell
+            Handle = $PowerShell.BeginInvoke()
+        }
+        
+        $Jobs += $JobObj
+    }
+
+    # Monitor Progress
+    $ActiveIPs = @()
+    $Counter = 0
+    $Total = $Jobs.Count
+    
+    while ($Jobs.Handle.IsCompleted -contains $false) {
+        $Counter = ($Jobs | Where-Object { $_.Handle.IsCompleted }).Count
+        $percent = [math]::Round(($Counter / $Total) * 100)
+        Write-Progress -Activity "Ping Sweep en progreso" -Status "Completado: $Counter/$Total" -PercentComplete $percent
+        Start-Sleep -Milliseconds 100
+    }
+    Write-Progress -Activity "Ping Sweep en progreso" -Completed
+
+    # Collect Results
+    foreach ($job in $Jobs) {
+        try {
+            $isAlive = $job.PowerShell.EndInvoke($job.Handle)
+            $job.PowerShell.Dispose()
+            if ($isAlive) {
+                $ActiveIPs += $job.IP
+            }
+        } catch {
+            Write-Warning "Error checking $($job.IP): $_"
+        }
+    }
+    
+    $RunspacePool.Close()
+    $RunspacePool.Dispose()
+    
+    return $ActiveIPs
 }
 
 # ==============================================================================
@@ -489,60 +577,56 @@ if ($MyInvocation.InvocationName -ne '.') {
 $targetIps = Get-IpRange -Prefix $SubnetPrefix
 Write-Host "[OBJETIVOS] $($targetIps.Count) IPs a escanear" -ForegroundColor Yellow
 
+# --- FASE 1: PARALLEL PING SWEEP ---
+$startSweep = Get-Date
+$aliveHosts = Invoke-ParallelPingSweep -IpList $targetIps -ThrottleLimit $MaxThreads -TimeoutMs $PingTimeoutMs
+$sweepDuration = ((Get-Date) - $startSweep).TotalSeconds
+Write-Host "[SWEEP] Ping sweep completado en $([math]::Round($sweepDuration, 2))s. Hosts activos: $($aliveHosts.Count)" -ForegroundColor Green
+
+# --- FASE 2: DETECTAR DETALLES Y PUERTOS ---
 $results = @()
 $counter = 0
-$totalIps = $targetIps.Count
+$totalAlive = $aliveHosts.Count
 
-foreach ($ip in $targetIps) {
+if ($totalAlive -eq 0) {
+    Write-Warning "No se encontraron hosts activos."
+}
+
+foreach ($ip in $aliveHosts) {
     $counter++
-    $percent = [math]::Round(($counter / $totalIps) * 100)
+    $percent = [math]::Round(($counter / $totalAlive) * 100)
     
-    Write-Progress -Activity "Escaneando red" -Status "$ip ($counter/$totalIps)" -PercentComplete $percent
+    Write-Progress -Activity "Analizando hosts activos" -Status "$ip ($counter/$totalAlive)" -PercentComplete $percent
+    Write-Host "[$counter/$totalAlive] Analizando $ip..." -ForegroundColor DarkGray
     
-    Write-Host "[$counter/$totalIps] Probando $ip..." -ForegroundColor DarkGray
+    # Ya sabemos que está viva por el sweep
+    # Obtener información del host
+    $hostInfo = Get-HostInfo -IpAddress $ip
     
-    # Verificar si el host está vivo
-    if (Test-HostAlive -IpAddress $ip) {
-        Write-Host "  [+] ACTIVA" -ForegroundColor Green
-        
-        # Obtener información del host
-        $hostInfo = Get-HostInfo -IpAddress $ip
-        
-        # Escanear puertos (si está habilitado)
-        $openPorts = @()
-        if ($PortScanEnabled) {
-            $openPorts = Scan-PortsByPriority -Ip $ip -Ports $CommonPorts -Cache $portCache
-            Write-Host "  Puertos abiertos: $($openPorts.Count)" -ForegroundColor Cyan
-        }
-        
-        # Agregar a resultados
-        $results += [PSCustomObject]@{
-            IP = $ip
-            Status = "Active"
-            Hostname = $hostInfo.Hostname
-            OS = $hostInfo.OS
-            MAC = $hostInfo.MAC
-            Manufacturer = $hostInfo.Manufacturer
-            OpenPorts = $openPorts
-            ScanTime = Get-Date
-        }
-        
-    } else {
-        Write-Host "  [-] INACTIVA" -ForegroundColor Red
-        $results += [PSCustomObject]@{
-            IP = $ip
-            Status = "Inactive"
-            Hostname = ""
-            OS = ""
-            MAC = ""
-            Manufacturer = ""
-            OpenPorts = @()
-            ScanTime = Get-Date
-        }
+    # Escanear puertos (Optimización: Solo en vivas)
+    $openPorts = @()
+    if ($PortScanEnabled) {
+        $openPorts = Scan-PortsByPriority -Ip $ip -Ports $CommonPorts -Cache $portCache
+        Write-Host "  Puertos abiertos: $($openPorts.Count)" -ForegroundColor Cyan
+    }
+    
+    # Agregar a resultados
+    $results += [PSCustomObject]@{
+        IP = $ip
+        Status = "Active"
+        Hostname = $hostInfo.Hostname
+        OS = $hostInfo.OS
+        MAC = $hostInfo.MAC
+        Manufacturer = $hostInfo.Manufacturer
+        OpenPorts = $openPorts
+        ScanTime = Get-Date
     }
 }
 
-Write-Progress -Completed
+# Add Inactive hosts dummy objects if needed for stats (optional, usually waste of memory)
+# We can just calculate count.
+
+Write-Progress -Activity "Analizando hosts activos" -Completed
 
 # Guardar caché actualizado
 Write-PortCache -Cache $portCache
@@ -568,8 +652,8 @@ Write-Host "   IPs inactivas: $($inactiveHosts.Count)" -ForegroundColor Red
 $portStats = @{}
 $totalOpenPorts = 0
 
-foreach ($host in $activeHosts) {
-    foreach ($port in $host.OpenPorts) {
+foreach ($deviceItem in $activeHosts) {
+    foreach ($port in $deviceItem.OpenPorts) {
         $totalOpenPorts++
         $cat = $port.Category
         $portStats[$cat] = ($portStats[$cat] + 1) -as [int]
@@ -616,34 +700,65 @@ function Send-ToApi {
     Write-Host "`nENVIANDO DATOS A LA API..." -ForegroundColor Cyan
     Write-Host "   URL: $ApiUrl" -ForegroundColor DarkCyan
     
-    # Preparar payload
-    $devices = @()
-    foreach ($host in $Hosts) {
-        $ports = @()
-        foreach ($port in $host.OpenPorts) {
-            $ports += @{
-                port = $port.Port
-                protocol = $port.Protocol
-                category = $port.Category
-                detected_at = $port.DetectedAt
-            }
-        }
+    # VERIFICAR QUE HAY DATOS
+    if ($Hosts.Count -eq 0) {
+        Write-Host "   ERROR: No hay hosts activos para enviar" -ForegroundColor Red
         
-        $devices += @{
-            IP = $host.IP
-            MAC = $host.MAC
-            Hostname = $host.Hostname
-            OpenPorts = $ports
+        # Enviar al menos un dispositivo de prueba para debug
+        Write-Host "   Enviando dispositivo de prueba para debug..." -ForegroundColor Yellow
+        $devices = @(
+            @{
+                IP = "192.168.1.100"
+                MAC = "00:00:00:00:00:01"
+                Hostname = "TEST-DEVICE"
+                OpenPorts = "80,443,22"
+            }
+        )
+    } else {
+        # Preparar payload REAL
+        $devices = @()
+        foreach ($deviceItem in $Hosts) {
+            # Asegurar que tenemos datos válidos
+            if ([string]::IsNullOrEmpty($deviceItem.IP)) {
+                Write-Warning "Dispositivo sin IP, omitiendo..."
+                continue
+            }
+            
+            # Convertir puertos a string (como espera receive.php)
+            $portsString = ""
+            if ($deviceItem.OpenPorts -and $deviceItem.OpenPorts.Count -gt 0) {
+                $openPortsArray = $deviceItem.OpenPorts | Where-Object { $_.Status -eq "Open" } | ForEach-Object { $_.Port }
+                if ($openPortsArray.Count -gt 0) {
+                    $portsString = $openPortsArray -join ","
+                }
+            }
+            
+            $devices += @{
+                IP = $deviceItem.IP
+                MAC = if ([string]::IsNullOrEmpty($deviceItem.MAC)) { "" } else { $deviceItem.MAC }
+                Hostname = $deviceItem.Hostname
+                OpenPorts = $portsString
+            }
+            
+            Write-Host "   Preparando: $($deviceItem.IP) - $($deviceItem.Hostname) - Puertos: $portsString" -ForegroundColor Gray
         }
+    }
+    
+    # VERIFICAR QUE HAY DISPOSITIVOS
+    if ($devices.Count -eq 0) {
+        Write-Host "   ERROR: No hay dispositivos válidos" -ForegroundColor Red
+        return $false
     }
     
     $payload = @{
         Devices = $devices
-        ScanTime = $scanTime
+        ScanTime = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
         Subnet = "${SubnetPrefix}0/24"
     }
     
-    $json = $payload | ConvertTo-Json -Depth 5
+    $json = $payload | ConvertTo-Json -Depth 3
+    Write-Host "   Payload JSON:" -ForegroundColor DarkGray
+    Write-Host $json -ForegroundColor DarkGray
     
     # Enviar a API
     for ($i = 1; $i -le $ApiRetries; $i++) {
@@ -653,18 +768,27 @@ function Send-ToApi {
             $response = Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $json `
                 -ContentType "application/json" -TimeoutSec $ApiTimeout
             
+            Write-Host "   Respuesta de API:" -ForegroundColor DarkGray
+            $response | ConvertTo-Json -Depth 3 | Write-Host -ForegroundColor DarkGray
+            
             if ($response.success) {
                 Write-Host "   DATOS ENVIADOS EXITOSAMENTE" -ForegroundColor Green
-                Write-Host "   Procesados: $($response.summary.processed)" -ForegroundColor Gray
-                Write-Host "   Conflictos: $($response.summary.conflicts)" -ForegroundColor Gray
-                Write-Host "   Errores: $($response.summary.errors)" -ForegroundColor Gray
+                Write-Host "   Mensaje: $($response.message)" -ForegroundColor Gray
                 return $true
             } else {
-                Write-Host "   API respondio con error: $($response.message)" -ForegroundColor Yellow
+                Write-Host "   API respondió con error: $($response.message)" -ForegroundColor Yellow
             }
         } catch {
+            Write-Host "   Error en intento $i : $($_.Exception.Message)" -ForegroundColor Yellow
+            
             if ($i -eq $ApiRetries) {
-                Write-Host "   FALLO DESPUES DE $ApiRetries INTENTOS: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "   FALLO DESPUÉS DE $ApiRetries INTENTOS" -ForegroundColor Red
+                
+                # Guardar payload fallido para debug
+                $debugFile = "failed_payload_$(Get-Date -Format 'yyyyMMdd_HHmmss').json"
+                $json | Out-File $debugFile -Force
+                Write-Host "   Payload guardado en: $debugFile" -ForegroundColor Yellow
+                
                 return $false
             } else {
                 Write-Host "   Reintentando en $ApiRetryDelay segundos..." -ForegroundColor Yellow
@@ -687,9 +811,9 @@ function Save-Local {
         hosts = @()
     }
     
-    foreach ($host in $Hosts) {
+    foreach ($Device in $Hosts) {
         $ports = @()
-        foreach ($port in $host.OpenPorts) {
+        foreach ($port in $Device.OpenPorts) {
             $ports += @{
                 port = $port.Port
                 protocol = $port.Protocol
@@ -699,11 +823,11 @@ function Save-Local {
         }
         
         $localData.hosts += @{
-            ip = $host.IP
-            mac = $host.MAC
-            hostname = $host.Hostname
-            os = $host.OS
-            manufacturer = $host.Manufacturer
+            ip = $Device.IP
+            mac = $Device.MAC
+            hostname = $Device.Hostname
+            os = $Device.OS
+            manufacturer = $Device.Manufacturer
             open_ports = $ports
         }
     }

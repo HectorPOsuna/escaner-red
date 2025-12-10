@@ -1,35 +1,29 @@
 <?php
 // db_config.php - en /lisi3309/ (raíz del proyecto)
-define('ROOT_PATH', __DIR__); // Ahora ROOT_PATH es /lisi3309/
 
-// Función para cargar .env
-function loadEnv($path) {
-    if (!file_exists($path)) {
-        throw new Exception("Archivo .env no encontrado: $path");
-    }
-    
-    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        if (strpos(trim($line), '#') === 0) continue;
-        if (strpos($line, '=') !== false) {
-            list($name, $value) = explode('=', $line, 2);
-            $name = trim($name);
-            $value = trim($value);
-            $value = trim($value, "\"'");
-            $_ENV[$name] = $value;
+// NOTA: La función loadEnv() fue movida a receive.php para evitar duplicación
+// Esta versión asume que $_ENV ya está cargado desde receive.php
+
+// Verificar si $_ENV está cargado
+if (empty($_ENV)) {
+    // Si no está cargado, cargarlo aquí como fallback
+    $envPath = __DIR__ . '/.env';
+    if (file_exists($envPath)) {
+        $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            if (strpos(trim($line), '#') === 0) continue;
+            if (strpos($line, '=') !== false) {
+                list($name, $value) = explode('=', $line, 2);
+                $name = trim($name);
+                $value = trim($value);
+                $value = trim($value, "\"'");
+                $_ENV[$name] = $value;
+            }
         }
     }
 }
 
-// Cargar .env (que está en la misma carpeta)
-try {
-    loadEnv(ROOT_PATH . '/.env');
-} catch (Exception $e) {
-    error_log("Error loading .env: " . $e->getMessage());
-    die("Configuration error. Please check .env file.");
-}
-
-// Configuración de conexión
+// Configuración de conexión (con valores por defecto más robustos)
 $config = [
     'host' => $_ENV['DB_HOST'] ?? 'dsantana.fimaz.uas.edu.mx',
     'port' => $_ENV['DB_PORT'] ?? 3306,
@@ -38,6 +32,11 @@ $config = [
     'password' => $_ENV['DB_PASSWORD'] ?? '123tamarindo',
     'charset' => 'utf8mb4'
 ];
+
+// Log para debugging (opcional)
+if ($_ENV['DEBUG'] ?? false) {
+    error_log("DB Config: " . json_encode(array_merge($config, ['password' => '***'])));
+}
 
 try {
     $dsn = "mysql:host={$config['host']};port={$config['port']};dbname={$config['dbname']};charset={$config['charset']}";

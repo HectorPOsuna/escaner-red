@@ -79,19 +79,28 @@ export default class DashboardView {
     }
 
     async loadData() {
-        try {
-            const res = await fetch('./api/dashboard.php?action=list&limit=50');
-            const json = await res.json();
-            this.state.devices = json.data;
-            this.updateTable();
-            
-            const resStats = await fetch('./api/dashboard.php?action=summary');
-            const jsonStats = await resStats.json();
+    try {
+        const res = await fetch('./api/dashboard.php?action=list&limit=50');
+        const json = await res.json();
+        
+        if (!json.success) {
+            throw new Error(json.message || 'Error del servidor');
+        }
+        
+        this.state.devices = json.data || [];
+        this.updateTable();
+        
+        // Para las estadísticas
+        const resStats = await fetch('./api/dashboard.php?action=summary');
+        const jsonStats = await resStats.json();
+        
+        if (jsonStats.success) {
             document.getElementById('stat-total').textContent = jsonStats.total_equipos;
-            
+        }
+        
         } catch (e) {
-            console.error(e);
-            this.app.toast('Error cargando datos', 'danger');
+        console.error(e);
+        this.app.toast('Error cargando datos: ' + e.message, 'danger');
         }
     }
 

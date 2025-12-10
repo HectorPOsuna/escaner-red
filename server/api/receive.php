@@ -14,7 +14,7 @@
 // -----------------------------------------------------------------------------
 // 0. CONFIGURACIÓN DB COMPARTIDA
 // -----------------------------------------------------------------------------
-require_once __DIR__ . '/../db_config.php';
+require_once __DIR__ . '/../../db_config.php';
 
 // -----------------------------------------------------------------------------
 // 1. CONFIGURACIÓN Y HEADERS
@@ -80,6 +80,7 @@ function sendResponse($success, $message, $data = [], $code = 200) {
 }
 
 // Cargar variables de entorno MANUALMENTE
+if (!function_exists('loadEnv')) {
 function loadEnv($path) {
     if (!file_exists($path)) {
         throw new Exception("Archivo .env no encontrado en: $path");
@@ -100,6 +101,7 @@ function loadEnv($path) {
             $_ENV[$name] = $value;
         }
     }
+}
 }
 
 // -----------------------------------------------------------------------------
@@ -264,49 +266,59 @@ class Processor {
     }
 
     private function persistHost($host) {
-        $ip = $host['ip'];
-        $mac = $host['mac'];
-        $hostname = $host['hostname'];
-        $osName = $host['os'] ?? 'Unknown';
+    $ip = $host['ip'];
+    $mac = $host['mac'];
+    $hostname = $host['hostname'];
+    $osName = $host['os'] ?? 'Unknown';
+    
+    // VALIDAR MAC ANTES DE PROCESAR
+    if ($mac) {
+        // Normalizar formato MAC
+        $mac = strtoupper($mac);
+        $mac = str_replace(['-', '.'], ':', $mac);
         
-        // Fabricante (OUI)
-        $fabricanteId = null;
-        if ($mac) {
-            $oui = substr(str_replace([':', '-'], '', $mac), 0, 6);
-            $fab = $this->fetchOne("SELECT id_fabricante FROM fabricantes WHERE oui_mac = ?", [$oui]);
-            if ($fab) {
-                $fabricanteId = $fab['id_fabricante'];
+        // Validar longitud (debe ser 17 caracteres con formato XX:XX:XX:XX:XX:XX)
+        if (strlen($mac) != 17) {
+            // Intentar formatear
+            $mac = preg_replace('/[^A-Fa-f0-9]/', '', $mac);
+            if (strlen($mac) == 12) {
+                $mac = implode(':', str_split($mac, 2));
             } else {
-                // Crear fabricante por defecto
-                $fabricanteId = $this->createFabricante('Desconocido', $oui);
+                // MAC inválida, usar NULL
+                $mac = null;
             }
-        } else {
-            // ID 1 suele ser desconocido en seeds
-            $fabricanteId = 1; 
         }
-
-        // Sistema Operativo
-        $soId = $this->getOrCreateSO($osName);
-
-        // Upsert Equipo
-        $equipoId = $this->upsertEquipo($hostname, $ip, $mac, $soId, $fabricanteId);
-
-        // Protocolos
-        foreach ($host['open_ports'] as $p) {
-            $port = $p['port'];
-            $protoName = $p['protocol'] ?? 'Unknown';
-            $category = $p['category'] ?? 'otro';
-            
-            // Validar que la categoría sea válida según el ENUM, si no, fallback a 'otro'
-            $validCategories = ['seguro', 'inseguro', 'precaucion', 'inusual', 'esencial', 'base_de_datos', 'correo'];
-            if (!in_array($category, $validCategories)) {
-                $category = 'otro';
-            }
-            
-            $protoId = $this->getOrCreateProtocolo($port, $protoName, $category);
-            $this->linkProtocolo($equipoId, $protoId, $port);
+    } else {
+        $mac = null;
+    }
+    
+    // Fabricante (OUI)
+    $fabricanteId = 1; // Default desconocido
+    
+    if ($mac) {
+        $oui = substr(str_replace(':', '', $mac), 0, 6);
+        $fab = $this->fetchOne("SELECT id_fabricante FROM fabricantes WHERE oui_mac = ?", [$oui]);
+        if ($fab) {
+            $fabricanteId = $fab['id_fabricante'];
         }
     }
+    
+    // Sistema Operativo
+    $soId = $this->getOrCreateSO($osName);
+    
+    // Upsert Equipo CON MANEJO DE ERRORES MEJORADO
+    try {
+        $equipoId = $this->upsertEquipo($hostname, $ip, $mac, $soId, $fabricanteId);
+    } catch (PDOException $e) {
+        // Si hay error de constraint, intentar con MAC nula
+        if (strpos($e->getMessage(), 'chk_equipos_mac_length') !== false && $mac) {
+            WriteLog("Error de constraint MAC para $ip, intentando con MAC nula", 'WARNING');
+            $equipoId = $this->upsertEquipo($hostname, $ip, null, $soId, $fabricanteId);
+        } else {
+            throw $e;
+        }
+    }
+}
 
     // --- Helpers SQL ---
 
@@ -405,6 +417,10 @@ class Processor {
 
 try {
     // Verificar método
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        sendResponse(true, 'API Online');
+    }
+
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         sendResponse(false, 'Método no permitido. Use POST.', [], 405);
     }

@@ -19,17 +19,16 @@ try {
         // Summary Cards
         $total = $pdo->query("SELECT COUNT(*) FROM equipos")->fetchColumn();
         
-        // Count by risk logic (assuming 'protocolos' table or logic exists, here we simplify)
-        // If risk is not stored, we might mock or query differently. 
-        // For now, let's assume we have a way to count or just return total.
-        // We will fetch latest captures count too.
+        // Count active devices (last 5 minutes)
+        $activeCount = $pdo->query("SELECT COUNT(*) FROM equipos WHERE ultima_deteccion >= NOW() - INTERVAL 5 MINUTE")->fetchColumn();
         
         echo json_encode([
-            'total_equipos' => $total,
-            'protocolos_seguros' => 0, // Placeholder if no explicit column
-            'protocolos_inseguros' => 0,
+            'success' => true,
+            'total_equipos' => (int)$total,
+            'activos_5min' => (int)$activeCount,
             'last_updated' => date('Y-m-d H:i:s')
         ]);
+        exit;
     }
     elseif ($action === 'list') {
         // Paginacion y filtros
@@ -39,36 +38,71 @@ try {
         
         $search = $_GET['search'] ?? '';
         
-        $sql = "SELECT id, ip, hostname, mac, fabricante, created_at, updated_at FROM equipos";
+        $sql = "SELECT e.*, f.nombre as fabricante_nombre 
+                FROM equipos e 
+                LEFT JOIN fabricantes f ON e.fabricante_id = f.id_fabricante";
         $params = [];
         
         if ($search) {
-            $sql .= " WHERE hostname LIKE ? OR ip LIKE ?";
+            $sql .= " WHERE e.hostname LIKE ? OR e.ip LIKE ? OR e.mac LIKE ?";
+            $params[] = "%$search%";
             $params[] = "%$search%";
             $params[] = "%$search%";
         }
         
-        $sql .= " ORDER BY updated_at DESC LIMIT $limit OFFSET $offset";
+        $sql .= " ORDER BY e.ultima_deteccion DESC LIMIT ? OFFSET ?";
+        $params[] = $limit;
+        $params[] = $offset;
         
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $devices = $stmt->fetchAll();
         
-        echo json_encode(['data' => $devices, 'page' => $page]);
+        // Get total count for pagination
+        $countSql = "SELECT COUNT(*) FROM equipos e";
+        if ($search) {
+            $countSql .= " WHERE e.hostname LIKE ? OR e.ip LIKE ? OR e.mac LIKE ?";
+        }
+        $countStmt = $pdo->prepare($countSql);
+        $countStmt->execute($search ? ["%$search%", "%$search%", "%$search%"] : []);
+        $total = $countStmt->fetchColumn();
+        
+        echo json_encode([
+            'success' => true,
+            'data' => $devices,
+            'page' => $page,
+            'limit' => $limit,
+            'total' => (int)$total,
+            'pages' => ceil($total / $limit)
+        ]);
+        exit;
     }
     elseif ($action === 'details') {
         $id = $_GET['id'] ?? 0;
-        $stmt = $pdo->prepare("SELECT * FROM equipos WHERE id = ?");
+        $stmt = $pdo->prepare("
+            SELECT e.*, f.nombre as fabricante_nombre, so.nombre as so_nombre 
+            FROM equipos e 
+            LEFT JOIN fabricantes f ON e.fabricante_id = f.id_fabricante
+            LEFT JOIN sistemas_operativos so ON e.id_so = so.id_so 
+            WHERE e.id_equipo = ?
+        ");
         $stmt->execute([$id]);
         $device = $stmt->fetch();
         
-        // Fetch ports/protocols if related table exists
-        // $stmtPorts = $pdo->prepare("SELECT * FROM puertos WHERE equipo_id = ?");
-        // ...
+        if (!$device) {
+            echo json_encode(['success' => false, 'message' => 'Device not found']);
+            exit;
+        }
         
-        echo json_encode(['device' => $device]);
+        echo json_encode(['success' => true, 'device' => $device]);
+        exit;
+    }
+    else {
+        echo json_encode(['success' => false, 'message' => 'Invalid action']);
+        exit;
     }
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    exit;
 }
