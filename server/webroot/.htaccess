@@ -1,0 +1,42 @@
+# Security & SPA Routing
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # IMPORTANTE: Si webroot está en la raíz, RewriteBase puede ser /
+    # Depende de cómo esté configurado el hosting
+    
+    # Probar sin RewriteBase primero
+    # RewriteBase /webroot/
+    
+    # 1. Bloquear acceso directo a archivos sensibles
+    RewriteRule ^\.(env|htaccess|htpasswd|ini|log|sh|sql|bak|git) - [F,L,NC]
+    
+    # 2. Permitir acceso directo a archivos estáticos y API
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+    
+    # 3. Redirección SPA: Todas las rutas a index.html
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+# Security Headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Cache para archivos estáticos
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType image/png "access plus 1 month"
+    ExpiresByType image/jpeg "access plus 1 month"
+    ExpiresByType image/svg+xml "access plus 1 month"
+    ExpiresByType text/html "access plus 0 seconds"
+</IfModule>

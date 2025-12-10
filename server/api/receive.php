@@ -12,6 +12,11 @@
  */
 
 // -----------------------------------------------------------------------------
+// 0. CONFIGURACIÓN DB COMPARTIDA
+// -----------------------------------------------------------------------------
+require_once __DIR__ . '/../db_config.php';
+
+// -----------------------------------------------------------------------------
 // 1. CONFIGURACIÓN Y HEADERS
 // -----------------------------------------------------------------------------
 
@@ -101,34 +106,8 @@ function loadEnv($path) {
 // 3. CONEXIÓN BASE DE DATOS
 // -----------------------------------------------------------------------------
 
-function getDbConnection() {
-    global $rootDir;
-    
-    $envPath = $rootDir . '/.env';
-    loadEnv($envPath);
-
-    $host = $_ENV['DB_HOST'] ?? 'localhost';
-    $port = $_ENV['DB_PORT'] ?? 3306;
-    $db   = $_ENV['DB_NAME'] ?? 'red_monitor';
-    $user = $_ENV['DB_USER'] ?? 'root';
-    $pass = $_ENV['DB_PASSWORD'] ?? '';
-    $charset = 'utf8mb4';
-
-    $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=$charset";
-    $options = [
-        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_EMULATE_PREPARES   => false,
-    ];
-
-    try {
-        return new PDO($dsn, $user, $pass, $options);
-    } catch (PDOException $e) {
-        writeLog("Error de conexión DB: " . $e->getMessage(), 'CRITICAL');
-        throw new Exception("Error conectando a la base de datos");
-    }
-}
-
+// Helper de DB eliminado, se usa $pdo global de db_config.php
+// function getDbConnection() ... eliminado
 // -----------------------------------------------------------------------------
 // 4. LÓGICA DE VALIDACIÓN
 // -----------------------------------------------------------------------------
@@ -467,8 +446,8 @@ try {
             sendResponse(false, 'Datos inválidos', ['errors' => $errors], 400);
         }
 
-        // Conectar BD
-        $pdo = getDbConnection();
+        // Conectar BD (Ya conectado via db_config.php en $pdo)
+        // $pdo = getDbConnection(); // Comentado refactor
 
         // Normalizar
         $data = normalizePayload($input);
