@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../../db_config.php';
+require_once __DIR__ . '/../db_config.php';
 require_once __DIR__ . '/auth/check.php'; // Verifies session via include or logic
 
 // Ensure request comes from authenticated user
