@@ -23,7 +23,7 @@ class App {
     }
 
     async checkAuth() {
-        const res = await fetch('api/auth/check.php');
+        const res = await fetch('./api/auth/check.php');
         const data = await res.json();
         
         if (data.authenticated) {

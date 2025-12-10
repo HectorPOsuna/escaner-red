@@ -80,12 +80,12 @@ export default class DashboardView {
 
     async loadData() {
         try {
-            const res = await fetch('api/dashboard.php?action=list&limit=50');
+            const res = await fetch('./api/dashboard.php?action=list&limit=50');
             const json = await res.json();
             this.state.devices = json.data;
             this.updateTable();
             
-            const resStats = await fetch('api/dashboard.php?action=summary');
+            const resStats = await fetch('./api/dashboard.php?action=summary');
             const jsonStats = await resStats.json();
             document.getElementById('stat-total').textContent = jsonStats.total_equipos;
             
@@ -114,7 +114,7 @@ export default class DashboardView {
     }
 
     initSSE() {
-        const evtSource = new EventSource('api/metrics.php');
+        const evtSource = new EventSource('./api/metrics.php');
         evtSource.onmessage = (e) => {
              const data = JSON.parse(e.data);
              // Update Realtime Stat
@@ -125,15 +125,15 @@ export default class DashboardView {
     }
 
     async handleLogout() {
-        await fetch('api/auth/logout.php');
+        await fetch('./api/auth/logout.php');
         this.app.user = null;
         this.app.router('/login');
     }
 
     handleDownload() {
-        // En un entorno real, primero listamos versiones con api/files/list.php
+        // En un entorno real, primero listamos versiones con ./api/files/list.php
         // Aquí asumimos directo por simplicidad o abrimos el listado.
         // Simulamos descarga de archivo conocido
-        window.location.href = 'api/files/download.php?file=NetworkScanner_Setup.exe';
+        window.location.href = './api/files/download.php?file=NetworkScanner_Setup.exe';
     }
 }

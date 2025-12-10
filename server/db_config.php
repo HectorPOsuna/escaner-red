@@ -1,6 +1,6 @@
 <?php
-// db_config.php - en /lisi3309/includes/
-define('ROOT_PATH', dirname(__DIR__));
+// db_config.php - en /lisi3309/ (raíz del proyecto)
+define('ROOT_PATH', __DIR__); // Ahora ROOT_PATH es /lisi3309/
 
 // Función para cargar .env
 function loadEnv($path) {
@@ -15,14 +15,13 @@ function loadEnv($path) {
             list($name, $value) = explode('=', $line, 2);
             $name = trim($name);
             $value = trim($value);
-            // Remover comillas
             $value = trim($value, "\"'");
             $_ENV[$name] = $value;
         }
     }
 }
 
-// Cargar .env
+// Cargar .env (que está en la misma carpeta)
 try {
     loadEnv(ROOT_PATH . '/.env');
 } catch (Exception $e) {
@@ -49,13 +48,11 @@ try {
         PDO::ATTR_PERSISTENT => false
     ]);
     
-    // Configurar timezone si es necesario
     $pdo->exec("SET time_zone = 'America/Mazatlan'");
     
 } catch (PDOException $e) {
     error_log("Database Connection Error: " . $e->getMessage());
     
-    // Mensajes amigables según el error
     $errorCode = $e->getCode();
     switch ($errorCode) {
         case 2002:

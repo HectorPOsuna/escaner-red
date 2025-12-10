@@ -6,7 +6,7 @@
  * Returns JSON with status and CSRF token.
  */
 
-require_once __DIR__ . '/../../db_config.php'; // Allow this to fail initially if file doesn't exist, we will create it.
+require_once __DIR__ . '/../db_config.php'; // Allow this to fail initially if file doesn't exist, we will create it.
 
 // Security Headers
 header('Content-Type: application/json');

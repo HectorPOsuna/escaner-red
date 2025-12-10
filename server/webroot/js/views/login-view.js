@@ -37,7 +37,7 @@ export default class LoginView {
         const data = Object.fromEntries(formData.entries());
         
         try {
-            const res = await fetch('api/auth/login.php', {
+            const res = await fetch('./api/auth/login.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
