@@ -78,9 +78,9 @@ Copy-Item "$RootDir\.env" -Destination "$PackageDir\Server\.env.example" # Plant
 # 5. Copiar Scripts de Base de Datos
 # --------------------------------------------------------------------------------
 Write-Host "5. Copiando Scripts SQL..." -ForegroundColor Green
-$DbSrc = Join-Path $RootDir "database"
+$DbSrc = Join-Path $RootDir "database\migrations"
 Copy-Item "$DbSrc\*.sql" -Destination "$PackageDir\Database"
-Copy-Item "$DbSrc\*.php" -Destination "$PackageDir\Database"
+# Copy-Item "$DbSrc\*.php" -Destination "$PackageDir\Database"
 
 # --------------------------------------------------------------------------------
 # 6. Copiar Scripts de Instalación

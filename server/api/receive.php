@@ -48,6 +48,17 @@ function writeLog($message, $type = 'INFO') {
         mkdir($logDir, 0755, true);
     }
 
+    // Rotación de logs: si es mayor a 5MB, renombrar a .bak
+    if (file_exists($logFile) && filesize($logFile) > 5 * 1024 * 1024) {
+        rename($logFile, $logFile . '.' . date('Ymd_His') . '.bak');
+        // Mantener solo ultimos 5 logs
+        $files = glob($logFile . '.*.bak');
+        if (count($files) > 5) {
+            usort($files, function($a, $b) { return filemtime($a) - filemtime($b); });
+            unlink($files[0]); // Borrar el mas viejo
+        }
+    }
+
     $timestamp = date('Y-m-d H:i:s');
     $entry = "[$timestamp] [$type] $message" . PHP_EOL;
     file_put_contents($logFile, $entry, FILE_APPEND);

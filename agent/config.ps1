@@ -27,7 +27,7 @@ $PortCacheTTLMinutes = 10
 
 # Rutas de Archivos
 $ScanResultsFile = "scan_results.json"
-$PhpProcessorScript = "..\server\cron_process.php"
+$PhpProcessorScript = "..\server\api\receive.php"
 $PhpExecutable = "php"
 
 # Configuración de Logs
