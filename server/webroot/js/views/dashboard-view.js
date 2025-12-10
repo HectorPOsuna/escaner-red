@@ -79,28 +79,32 @@ export default class DashboardView {
     }
 
     async loadData() {
-    try {
-        const res = await fetch('./api/dashboard.php?action=list&limit=50');
-        const json = await res.json();
+        try {
+        console.log("=== DEBUG: Iniciando loadData ===");
         
-        if (!json.success) {
-            throw new Error(json.message || 'Error del servidor');
+        const res = await fetch('./api/dashboard.php?action=list&limit=50');
+        const rawText = await res.text();
+        
+        // Muestra información de depuración
+        console.log("Status:", res.status, res.statusText);
+        console.log("Raw response length:", rawText.length);
+        console.log("Raw response (primeros 200 chars):", rawText.substring(0, 200));
+        console.log("Raw response (últimos 50 chars):", rawText.substring(rawText.length - 50));
+        
+        // Muestra caracteres especiales
+        console.log("Char codes at end:");
+        for (let i = rawText.length - 10; i < rawText.length; i++) {
+            console.log(`Pos ${i}: '${rawText[i]}' (code: ${rawText.charCodeAt(i)})`);
         }
         
-        this.state.devices = json.data || [];
+        // Intenta parsear
+        const json = JSON.parse(rawText);
+        this.state.devices = json.data;
         this.updateTable();
         
-        // Para las estadísticas
-        const resStats = await fetch('./api/dashboard.php?action=summary');
-        const jsonStats = await resStats.json();
-        
-        if (jsonStats.success) {
-            document.getElementById('stat-total').textContent = jsonStats.total_equipos;
-        }
-        
         } catch (e) {
-        console.error(e);
-        this.app.toast('Error cargando datos: ' + e.message, 'danger');
+        console.error("=== ERROR COMPLETO ===", e);
+        this.app.toast('Error cargando datos', 'danger');
         }
     }
 

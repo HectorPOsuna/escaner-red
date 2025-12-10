@@ -1,60 +1,137 @@
 <?php
+// metrics.php - SSE Server-Sent Events CORREGIDO
+
 require_once __DIR__ . '/../db_config.php';
 
-// SSE Headers
-header('Content-Type: text/event-stream');
-header('Cache-Control: no-cache');
-header('Connection: keep-alive');
+// Validación de sesión MANUAL (sin check.php)
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// Optional: Auth Check (might require passing session ID in query param for SSE if cookies are strict)
-// For simplicity/browser-support, we assume cookie auth works if same-origin.
-if (session_status() === PHP_SESSION_NONE) session_start();
 if (!isset($_SESSION['user_id'])) {
+    // Para SSE, enviamos un evento de error y salimos
+    header('Content-Type: text/event-stream');
+    header('Cache-Control: no-cache');
     echo "event: error\n";
-    echo "data: Unauthorized\n\n";
+    echo "data: " . json_encode(['error' => 'Unauthorized']) . "\n\n";
     flush();
     exit;
 }
 
-// Loop for sending events
-// In production, keep this strictly controlled or use a proper push service to avoid holding PHP threads.
-// For this demo/requirement, we'll send one update or loop briefly.
-// A common pattern in standard PHP (Apache/CGI) is NOT to loop infinitely to avoid timeout/resource limit.
-// Better: Client polls this or connects, gets data, and connection closes if server times out.
-// Or usage of specific event loop. We will implement "One-shot" or "Short-burst" logic for compatibility.
+// Headers SSE
+header('Content-Type: text/event-stream');
+header('Cache-Control: no-cache');
+header('X-Accel-Buffering: no'); // Para Nginx
+ob_implicit_flush(true);
+@ini_set('zlib.output_compression', 0);
+@ini_set('implicit_flush', 1);
 
-// Actually, SSE implies long-running. Basic PHP might be killed by execution_time limit.
-set_time_limit(0); 
+// Desactivar límites de tiempo para conexión larga
+set_time_limit(0);
+ignore_user_abort(false);
 
-$lastId = 0;
+// Limpiar buffer de salida
+while (ob_get_level() > 0) {
+    ob_end_flush();
+}
+flush();
 
-while (true) {
-    // Check connection status
-    if (connection_aborted()) break;
+// ID del último evento (para re-conexión)
+$lastEventId = intval(isset($_SERVER['HTTP_LAST_EVENT_ID']) ? $_SERVER['HTTP_LAST_EVENT_ID'] : 0);
+$eventId = $lastEventId + 1;
 
-    // Fetch Metrics
-    // Example: Count of active devices in last minute
-    try {
-        // Query recent updates
-        $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM equipos WHERE updated_at >= NOW() - INTERVAL 1 MINUTE");
-        $stmt->execute();
-        $activeNow = $stmt->fetchColumn();
+// Contador de ciclos para evitar ejecución infinita
+$maxCycles = 360; // Máximo 30 minutos (360 ciclos * 5 segundos)
+$cycleCount = 0;
 
-        $data = json_encode([
-            'time' => date('H:i:s'),
-            'active_devices' => $activeNow,
-            'cpu_load' => sys_getloadavg()[0] ?? 0 // if linux
-        ]);
-
-        echo "id: " . time() . "\n";
-        echo "data: {$data}\n\n";
-        
-        ob_flush();
-        flush();
-    } catch (Exception $e) {
-        // Silent fail or send error event
+// Bucle principal de SSE
+while ($cycleCount < $maxCycles) {
+    // Verificar si el cliente se desconectó
+    if (connection_aborted()) {
+        error_log("SSE: Cliente desconectado");
+        break;
     }
-
-    // Wait 5 seconds
+    
+    try {
+        // 1. Dispositivos activos (últimos 5 minutos)
+        $stmtActive = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM equipos 
+            WHERE ultima_deteccion >= NOW() - INTERVAL 5 MINUTE
+        ");
+        $stmtActive->execute();
+        $activeDevices = $stmtActive->fetchColumn();
+        
+        // 2. Dispositivos totales
+        $stmtTotal = $pdo->query("SELECT COUNT(*) FROM equipos");
+        $totalDevices = $stmtTotal->fetchColumn();
+        
+        // 3. Conflictos no resueltos (si tienes tabla conflictos)
+        $unresolvedConflicts = 0;
+        try {
+            $stmtConflicts = $pdo->query("SELECT COUNT(*) FROM conflictos WHERE estado = 'detectado'");
+            $unresolvedConflicts = $stmtConflicts->fetchColumn();
+        } catch (Exception $e) {
+            // Tabla conflictos puede no existir
+        }
+        
+        // 4. Último escaneo (timestamp más reciente)
+        $stmtLastScan = $pdo->query("
+            SELECT MAX(ultima_deteccion) as last_scan 
+            FROM equipos 
+            WHERE ultima_deteccion IS NOT NULL
+        ");
+        $lastScan = $stmtLastScan->fetchColumn();
+        
+        // Preparar datos
+        $data = [
+            'eventId' => $eventId,
+            'timestamp' => date('Y-m-d H:i:s'),
+            'active_devices' => (int)$activeDevices,
+            'total_devices' => (int)$totalDevices,
+            'unresolved_conflicts' => (int)$unresolvedConflicts,
+            'last_scan' => $lastScan ? date('H:i:s', strtotime($lastScan)) : 'Nunca',
+            'server_time' => date('H:i:s')
+        ];
+        
+        // Enviar evento
+        echo "id: " . $eventId . "\n";
+        echo "event: update\n";
+        echo "data: " . json_encode($data) . "\n\n";
+        
+        // Forzar envío inmediato
+        if (ob_get_level() > 0) ob_flush();
+        flush();
+        
+        // Incrementar IDs y contadores
+        $eventId++;
+        $cycleCount++;
+        
+    } catch (Exception $e) {
+        // Enviar evento de error
+        echo "event: error\n";
+        echo "data: " . json_encode(['error' => 'Database error', 'message' => $e->getMessage()]) . "\n\n";
+        flush();
+        
+        // Esperar antes de reintentar
+        sleep(10);
+        continue;
+    }
+    
+    // Esperar 5 segundos antes del siguiente ciclo
     sleep(5);
 }
+
+// Evento de fin de conexión
+if ($cycleCount >= $maxCycles) {
+    echo "event: timeout\n";
+    echo "data: " . json_encode(['message' => 'Connection timeout, reconnecting...']) . "\n\n";
+    flush();
+    sleep(1);
+}
+
+// Mensaje de cierre
+echo "event: close\n";
+echo "data: Connection closed\n\n";
+flush();
+exit;

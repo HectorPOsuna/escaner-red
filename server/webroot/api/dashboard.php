@@ -1,12 +1,12 @@
 <?php
 require_once __DIR__ . '/../db_config.php';
-require_once __DIR__ . '/auth/check.php'; // Verifies session via include or logic
+require_once __DIR__ . '/auth/check.php';
 
-// Ensure request comes from authenticated user
-if (session_status() === PHP_SESSION_NONE) session_start();
-if (!isset($_SESSION['user_id'])) {
+// Usar la función en lugar de incluir automáticamente
+$auth = checkAuthentication();
+if (!$auth['authenticated']) {
     http_response_code(401);
-    echo json_encode(['error' => 'Unauthorized']);
+    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
 
