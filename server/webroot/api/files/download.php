@@ -1,22 +1,12 @@
 <?php
-require_once __DIR__ . '/../../db_config.php';
+require_once __DIR__ . '/../../../db_config.php';
 
 // Auth Check
 if (session_status() === PHP_SESSION_NONE) session_start();
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);
-    die('Unauthorized');
-}
-
-// Security: Define secure folder OUTSIDE webroot ideally, 
-// here we assume strict folder.
-$secureDir = __DIR__ . '/../../../../secure_downloads/'; // 4 levels up? 
-// api/files -> webroot -> server -> project -> secure_downloads
-// Adjust path as needed. Let's assume absolute or relative fixed path.
-$secureDir = 'C:\Users\gamer\secure_downloads\\'; // User environment specific or relative
-
 // For this environment, we might put it in d:\GITHUB\escaner-red\secure_downloads
-$secureDir = __DIR__ . '/../../../secure_downloads/';
+$secureDir = __DIR__ . '/../../secure_downloads/';
 
 // Fix Path Traversal
 $filename = basename($_GET['file'] ?? '');

@@ -282,28 +282,35 @@ function Test-HostAlive {
 }
 
 function Get-HostInfo {
-    param([string]$IpAddress)
+    param(
+        [string]$IpAddress,
+        [array]$OpenPorts = @()  # Ahora recibe puertos abiertos
+    )
     
     Write-Host "[INFO] Obteniendo información para $IpAddress..." -ForegroundColor DarkGray
     
     $info = @{
         Hostname = "Desconocido"
         OS = "Unknown"
+        OS_Detailed = "Desconocido"  # Nueva: Detección detallada
         MAC = ""
         Manufacturer = "Desconocido"
+        TTL = 0
+        OS_Hints = @()  # Pistas de detección
     }
     
     try {
         # 1. Obtener hostname
         try {
-            $info.Hostname = [System.Net.Dns]::GetHostEntry($IpAddress).HostName
+            $dnsEntry = [System.Net.Dns]::GetHostEntry($IpAddress)
+            $info.Hostname = $dnsEntry.HostName
             Write-Host "  Hostname: $($info.Hostname)" -ForegroundColor Gray
         } catch { 
             Write-Host "  Hostname: No disponible" -ForegroundColor DarkGray
             $info.Hostname = "Host-$IpAddress"
         }
         
-        # 2. Obtener MAC usando método más confiable
+        # 2. Obtener MAC (método existente)
         $mac = Get-NetNeighbor -IPAddress $IpAddress -ErrorAction SilentlyContinue | 
                Select-Object -First 1 -ExpandProperty LinkLayerAddress
         
@@ -323,23 +330,143 @@ function Get-HostInfo {
             }
         }
         
-        # 3. Detectar OS por TTL
+        # 3. DETECCIÓN AVANZADA DE SISTEMA OPERATIVO
         try {
             $ping = New-Object System.Net.NetworkInformation.Ping
             $reply = $ping.Send($IpAddress, 1000)
+            
             if ($reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) {
                 $ttl = $reply.Options.Ttl
-                if ($ttl -le 64) { 
-                    $info.OS = "Linux/Unix" 
-                    Write-Host "  OS: Linux/Unix (TTL: $ttl)" -ForegroundColor Gray
+                $info.TTL = $ttl
+                
+                # Detección por TTL (base)
+                $baseOS = if ($ttl -le 64) { "Linux/Unix" }
+                         elseif ($ttl -le 128) { "Windows" }
+                         else { "Network Device" }
+                
+                $info.OS = $baseOS
+                $info.OS_Hints += "TTL:$ttl"
+                
+                # ANÁLISIS POR HOSTNAME
+                $hostnameLower = $info.Hostname.ToLower()
+                $osByHostname = $null
+                
+                # Patrones en hostname
+                $hostnamePatterns = @{
+                    # Windows Server
+                    '^dc[0-9]' = 'Windows Server'
+                    '-dc[0-9]' = 'Windows Server'
+                    'dc\.' = 'Windows Server'
+                    'server' = 'Windows Server'
+                    'srv' = 'Windows Server'
+                    'exchange' = 'Windows Server'
+                    'sql' = 'Windows Server'
+                    
+                    # Linux/Unix
+                    'ubuntu' = 'Ubuntu'
+                    'debian' = 'Debian'
+                    'centos' = 'CentOS'
+                    'rhel' = 'Red Hat Enterprise Linux'
+                    'fedora' = 'Fedora'
+                    'arch' = 'Arch Linux'
+                    'mint' = 'Linux Mint'
+                    'raspberrypi' = 'Raspberry Pi OS'
+                    'kali' = 'Kali Linux'
+                    
+                    # Dispositivos de red
+                    'router' = 'Router'
+                    'rt-' = 'Router'
+                    'switch' = 'Switch'
+                    'sw-' = 'Switch'
+                    'firewall' = 'Firewall'
+                    'fw-' = 'Firewall'
+                    'ap-' = 'Access Point'
+                    'accesspoint' = 'Access Point'
+                    'printer' = 'Printer'
+                    'print' = 'Printer'
+                    'nas' = 'NAS Device'
+                    'camera' = 'Camera'
+                    'cam-' = 'Camera'
+                    
+                    # Versiones Windows
+                    'win11' = 'Windows 11'
+                    'windows11' = 'Windows 11'
+                    'win10' = 'Windows 10'
+                    'windows10' = 'Windows 10'
+                    'win7' = 'Windows 7'
+                    'windows7' = 'Windows 7'
+                    'win8' = 'Windows 8'
+                    'windows8' = 'Windows 8'
                 }
-                elseif ($ttl -le 128) { 
-                    $info.OS = "Windows" 
-                    Write-Host "  OS: Windows (TTL: $ttl)" -ForegroundColor Gray
+                
+                foreach ($pattern in $hostnamePatterns.Keys) {
+                    if ($hostnameLower -match $pattern) {
+                        $osByHostname = $hostnamePatterns[$pattern]
+                        $info.OS_Hints += "Hostname:$pattern"
+                        break
+                    }
                 }
-                else { 
-                    $info.OS = "Network Device" 
-                    Write-Host "  OS: Dispositivo de red (TTL: $ttl)" -ForegroundColor Gray
+                
+                # ANÁLISIS POR PUERTOS ABIERTOS
+                $osByPorts = $null
+                $portOSMap = @{
+                    3389 = 'Windows'        # RDP
+                    5985 = 'Windows'        # WinRM
+                    5986 = 'Windows'        # WinRM SSL
+                    445 = 'Windows'         # SMB
+                    139 = 'Windows'         # NetBIOS
+                    135 = 'Windows'         # RPC
+                    22 = 'Linux/Unix'       # SSH
+                    23 = 'Network Device'   # Telnet
+                    161 = 'Network Device'  # SNMP
+                    162 = 'Network Device'  # SNMP Trap
+                    9100 = 'Printer'        # Printing
+                    515 = 'Printer'         # LPR
+                    548 = 'macOS'           # AFP
+                    62078 = 'iOS'           # iPhone
+                    5353 = 'Apple Device'   # Bonjour
+                    8006 = 'Proxmox VE'     # Proxmox Web
+                    943 = 'VMware'          # VMware Client
+                    902 = 'VMware'          # VMware Auth
+                }
+                
+                foreach ($port in $OpenPorts) {
+                    if ($portOSMap.ContainsKey($port.Port)) {
+                        $osByPorts = $portOSMap[$port.Port]
+                        $info.OS_Hints += "Port:$($port.Port)=$osByPorts"
+                        break
+                    }
+                }
+                
+                # DECISIÓN FINAL DEL SO
+                $detectedOS = $baseOS  # Por defecto
+                
+                # Prioridad: Puertos > Hostname > TTL
+                if ($osByPorts) {
+                    $detectedOS = $osByPorts
+                } elseif ($osByHostname) {
+                    $detectedOS = $osByHostname
+                }
+                
+                # Refinamiento adicional
+                if ($detectedOS -eq "Windows" -and $ttl -eq 128) {
+                    # Intentar detectar versión por puertos adicionales
+                    if ($OpenPorts.Port -contains 3389) {
+                        $detectedOS = "Windows (RDP)"
+                    } elseif ($OpenPorts.Port -contains 5985 -or $OpenPorts.Port -contains 5986) {
+                        $detectedOS = "Windows (WinRM)"
+                    }
+                }
+                
+                # Si es Linux y tiene puerto 22, especificar
+                if ($detectedOS -eq "Linux/Unix" -and $OpenPorts.Port -contains 22) {
+                    $detectedOS = "Linux/Unix (SSH)"
+                }
+                
+                $info.OS_Detailed = $detectedOS
+                Write-Host "  OS: $detectedOS (TTL: $ttl)" -ForegroundColor Green
+                if ($info.OS_Hints.Count -gt 1) {
+                    Write-Host "  Pistas: $($info.OS_Hints -join ', ')" -ForegroundColor DarkGray
                 }
             }
         } catch {
@@ -352,6 +479,7 @@ function Get-HostInfo {
     
     return $info
 }
+
 
 function Read-PortCache {
     if (Test-Path $PortCacheFile) {
@@ -601,7 +729,7 @@ foreach ($ip in $aliveHosts) {
     
     # Ya sabemos que está viva por el sweep
     # Obtener información del host
-    $hostInfo = Get-HostInfo -IpAddress $ip
+    $hostInfo = Get-HostInfo -IpAddress $ip -OpenPorts $openPorts
     
     # Escanear puertos (Optimización: Solo en vivas)
     $openPorts = @()
@@ -612,14 +740,17 @@ foreach ($ip in $aliveHosts) {
     
     # Agregar a resultados
     $results += [PSCustomObject]@{
-        IP = $ip
-        Status = "Active"
-        Hostname = $hostInfo.Hostname
-        OS = $hostInfo.OS
-        MAC = $hostInfo.MAC
-        Manufacturer = $hostInfo.Manufacturer
-        OpenPorts = $openPorts
-        ScanTime = Get-Date
+    IP = $ip
+    Status = "Active"
+    Hostname = $hostInfo.Hostname
+    OS = $hostInfo.OS_Detailed  # Usar el detallado
+    OS_Simple = $hostInfo.OS     # Mantener el simple por compatibilidad
+    MAC = $hostInfo.MAC
+    Manufacturer = $hostInfo.Manufacturer
+    OpenPorts = $openPorts
+    ScanTime = Get-Date
+    TTL = $hostInfo.TTL
+    OS_Hints = $hostInfo.OS_Hints -join '|'
     }
 }
 

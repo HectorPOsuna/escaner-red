@@ -14,6 +14,8 @@
 // -----------------------------------------------------------------------------
 // 0. CONFIGURACIÓN DB COMPARTIDA
 // -----------------------------------------------------------------------------
+// receive.php está en /lisi3309/server/api/, db_config.php está en /lisi3309/
+// Necesitamos subir 2 niveles: ../.. 
 require_once __DIR__ . '/../../db_config.php';
 
 // -----------------------------------------------------------------------------
@@ -162,16 +164,30 @@ function normalizePayload($data) {
         $hostname = $device['Hostname'] ?? 'Desconocido';
         $openPortsRaw = $device['OpenPorts'] ?? '';
         
-        // Parsear puertos
+        // NUEVOS CAMPOS del escáner mejorado
+        $osFromScanner = $device['OS'] ?? 'Unknown';  // OS detallado
+        $osSimple = $device['OS_Simple'] ?? 'Unknown'; // OS simple
+        $ttl = isset($device['TTL']) ? intval($device['TTL']) : null;
+        $osHints = isset($device['OS_Hints']) ? $device['OS_Hints'] : '';
+        
+        // Parsear puertos (mejorado para manejar array o string)
         $ports = [];
         if (is_array($openPortsRaw)) {
+            // Ya viene como array de objetos
             $ports = $openPortsRaw;
-        } elseif (is_string($openPortsRaw) && !empty($openPortsRaw)) {
-            $parts = explode(',', $openPortsRaw);
-            foreach ($parts as $p) {
-                $p = trim($p);
-                if (is_numeric($p)) {
-                    $ports[] = ['port' => intval($p), 'protocol' => 'Unknown'];
+        } elseif (is_string($openPortsRaw) && !empty(trim($openPortsRaw))) {
+            // Intentar parsear como JSON primero
+            $decoded = json_decode($openPortsRaw, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $ports = $decoded;
+            } else {
+                // Parsear como string separado por comas
+                $parts = explode(',', $openPortsRaw);
+                foreach ($parts as $p) {
+                    $p = trim($p);
+                    if (is_numeric($p)) {
+                        $ports[] = ['port' => intval($p), 'protocol' => 'Unknown'];
+                    }
                 }
             }
         }
@@ -180,8 +196,11 @@ function normalizePayload($data) {
             'ip' => $ip,
             'mac' => $mac,
             'hostname' => $hostname,
+            'os' => $osFromScanner,  // Usar el OS detallado del escáner
+            'os_simple' => $osSimple,
+            'ttl' => $ttl,
+            'os_hints' => $osHints,
             'manufacturer' => 'Desconocido', // Será resuelto por OUI después
-            'os' => 'Unknown',
             'open_ports' => $ports
         ];
     }
@@ -192,6 +211,7 @@ function normalizePayload($data) {
         'hosts' => $hosts
     ];
 }
+
 
 // -----------------------------------------------------------------------------
 // 5. CLASE DE PROCESAMIENTO (Micro-ORM Embebido)
@@ -265,11 +285,251 @@ class Processor {
         }
     }
 
+    private function detectAndMapOS($osFromScanner, $hostname, $openPorts, $ttl = null) {
+    // Normalizar inputs
+    $osFromScanner = strtolower(trim($osFromScanner));
+    $hostname = strtolower(trim($hostname));
+    
+    // Si el escáner ya detectó algo específico, usar eso primero
+    if ($osFromScanner !== 'unknown' && $osFromScanner !== 'desconocido') {
+        // MAPA DE DETECCIÓN -> NOMBRE EN BD (ampliado)
+        $osMapping = [
+            // Windows
+            'windows' => 'Windows (Generic)',
+            'windows 11' => 'Windows 11',
+            'windows 10' => 'Windows 10',
+            'windows 8.1' => 'Windows 8.1',
+            'windows 8' => 'Windows 8',
+            'windows 7' => 'Windows 7',
+            'windows vista' => 'Windows Vista',
+            'windows xp' => 'Windows XP',
+            'windows server' => 'Windows Server',
+            'windows (rdp)' => 'Windows',
+            'windows (winrm)' => 'Windows',
+            'windows (smb)' => 'Windows',
+            
+            // Linux/Unix
+            'linux/unix' => 'Linux/Unix (Generic)',
+            'linux/unix (ssh)' => 'Linux/Unix (Generic)',
+            'ubuntu' => 'Ubuntu',
+            'debian' => 'Debian',
+            'centos' => 'CentOS',
+            'red hat' => 'Red Hat Enterprise Linux',
+            'rhel' => 'Red Hat Enterprise Linux',
+            'fedora' => 'Fedora',
+            'arch linux' => 'Arch Linux',
+            'linux mint' => 'Linux Mint',
+            'raspberry pi' => 'Raspberry Pi OS',
+            'raspbian' => 'Raspberry Pi OS',
+            'kali linux' => 'Kali Linux',
+            'alpine' => 'Alpine Linux',
+            'opensuse' => 'openSUSE',
+            'gentoo' => 'Gentoo',
+            
+            // macOS
+            'macos' => 'macOS',
+            'mac os' => 'macOS',
+            'apple' => 'macOS',
+            'apple device' => 'macOS',
+            
+            // Network Devices
+            'network device' => 'Network Device',
+            'router' => 'Router',
+            'switch' => 'Switch',
+            'firewall' => 'Firewall',
+            'access point' => 'Access Point',
+            'ap' => 'Access Point',
+            'printer' => 'Printer',
+            'camera' => 'Camera',
+            'nas' => 'NAS Device',
+            'voip' => 'VoIP Phone',
+            'iot' => 'IoT Device',
+            
+            // Específicos de fabricantes
+            'cisco' => 'Cisco IOS',
+            'cisco ios' => 'Cisco IOS',
+            'mikrotik' => 'MikroTik RouterOS',
+            'ubiquiti' => 'Ubiquiti EdgeOS',
+            'pfsense' => 'pfSense',
+            'opnsense' => 'OPNsense',
+            'fortinet' => 'FortiOS',
+            'palo alto' => 'Palo Alto PAN-OS',
+            
+            // Virtualización
+            'proxmox' => 'Proxmox VE',
+            'vmware' => 'VMware ESXi',
+            'hyper-v' => 'Hyper-V',
+            'esxi' => 'VMware ESXi',
+            
+            // Mobile
+            'android' => 'Android',
+            'ios' => 'iOS',
+            'ipados' => 'iPadOS',
+            'chrome os' => 'Chrome OS',
+            
+            // Desconocido
+            'unknown' => 'Desconocido',
+            'desconocido' => 'Desconocido'
+        ];
+        
+        // 1. Buscar coincidencia exacta en el mapa
+        if (isset($osMapping[$osFromScanner])) {
+            return $osMapping[$osFromScanner];
+        }
+        
+        // 2. Buscar por patrones en el nombre recibido
+        foreach ($osMapping as $key => $value) {
+            if (strpos($osFromScanner, $key) !== false) {
+                return $value;
+            }
+        }
+    }
+    
+    // 3. Analizar hostname para inferir (si no se detectó por el escáner)
+    $hostnamePatterns = [
+        // Windows Server
+        '/^dc[0-9]/i' => 'Windows Server',
+        '/dc[0-9]/i' => 'Windows Server',
+        '/\.dc\./i' => 'Windows Server',
+        '/server/i' => 'Windows Server',
+        '/srv[0-9]/i' => 'Windows Server',
+        '/exchange/i' => 'Windows Server',
+        '/sql/i' => 'Windows Server',
+        
+        // Linux
+        '/ubuntu/i' => 'Ubuntu',
+        '/debian/i' => 'Debian',
+        '/centos/i' => 'CentOS',
+        '/rhel/i' => 'Red Hat Enterprise Linux',
+        '/fedora/i' => 'Fedora',
+        '/arch/i' => 'Arch Linux',
+        '/mint/i' => 'Linux Mint',
+        '/raspberry/i' => 'Raspberry Pi OS',
+        '/rpi/i' => 'Raspberry Pi OS',
+        '/kali/i' => 'Kali Linux',
+        
+        // Dispositivos de red
+        '/router/i' => 'Router',
+        '/rt-[0-9]/i' => 'Router',
+        '/rt[0-9]/i' => 'Router',
+        '/switch/i' => 'Switch',
+        '/sw-[0-9]/i' => 'Switch',
+        '/sw[0-9]/i' => 'Switch',
+        '/firewall/i' => 'Firewall',
+        '/fw-[0-9]/i' => 'Firewall',
+        '/ap-[0-9]/i' => 'Access Point',
+        '/ap[0-9]/i' => 'Access Point',
+        '/printer/i' => 'Printer',
+        '/print/i' => 'Printer',
+        '/nas/i' => 'NAS Device',
+        '/camera/i' => 'Camera',
+        '/cam-[0-9]/i' => 'Camera',
+        '/voip/i' => 'VoIP Phone',
+        '/phone/i' => 'VoIP Phone',
+        
+        // Versiones Windows específicas
+        '/win11/i' => 'Windows 11',
+        '/windows11/i' => 'Windows 11',
+        '/win10/i' => 'Windows 10',
+        '/windows10/i' => 'Windows 10',
+        '/win7/i' => 'Windows 7',
+        '/windows7/i' => 'Windows 7',
+        '/win8/i' => 'Windows 8',
+        '/windows8/i' => 'Windows 8',
+    ];
+    
+    foreach ($hostnamePatterns as $pattern => $osName) {
+        if (preg_match($pattern, $hostname)) {
+            return $osName;
+        }
+    }
+    
+    // 4. Analizar por puertos abiertos
+    if (!empty($openPorts)) {
+        $portOSMap = [
+            3389 => 'Windows',          // RDP
+            5985 => 'Windows',          // WinRM HTTP
+            5986 => 'Windows',          // WinRM HTTPS
+            445 => 'Windows',           // SMB
+            139 => 'Windows',           // NetBIOS
+            135 => 'Windows',           // RPC
+            22 => 'Linux/Unix (Generic)', // SSH
+            23 => 'Network Device',     // Telnet
+            161 => 'Network Device',    // SNMP
+            162 => 'Network Device',    // SNMP Trap
+            9100 => 'Printer',          // Raw Printing
+            515 => 'Printer',           // LPR
+            631 => 'Printer',           // IPP
+            548 => 'macOS',             // AFP
+            62078 => 'iOS',             // iPhone sync
+            5353 => 'Apple Device',     // Bonjour/mDNS
+            8006 => 'Proxmox VE',       // Proxmox Web
+            8000 => 'Proxmox VE',       // Proxmox Alt
+            943 => 'VMware',            // VMware Client
+            902 => 'VMware',            // VMware Auth
+            443 => 'Web Device',        // HTTPS (genérico)
+            80 => 'Web Device',         // HTTP (genérico)
+        ];
+        
+        // Contar ocurrencias de cada SO por puerto
+        $portCounts = [];
+        foreach ($openPorts as $port) {
+            $portNum = is_array($port) ? $port['port'] : intval($port);
+            if (isset($portOSMap[$portNum])) {
+                $detectedOS = $portOSMap[$portNum];
+                $portCounts[$detectedOS] = ($portCounts[$detectedOS] ?? 0) + 1;
+            }
+        }
+        
+        // Si hay puertos detectados, usar el más común
+        if (!empty($portCounts)) {
+            arsort($portCounts);
+            $detectedOS = key($portCounts);
+            
+            // Si hay múltiples puertos del mismo SO, confiar más
+            if ($portCounts[$detectedOS] > 1) {
+                return $detectedOS;
+            }
+            
+            // Si solo un puerto, verificar si es fuerte indicador
+            $strongPorts = [3389, 22, 548, 62078, 8006, 943]; // Puertos muy específicos
+            foreach ($openPorts as $port) {
+                $portNum = is_array($port) ? $port['port'] : intval($port);
+                if (in_array($portNum, $strongPorts) && isset($portOSMap[$portNum])) {
+                    return $portOSMap[$portNum];
+                }
+            }
+            
+            return $detectedOS;
+        }
+    }
+    
+    // 5. Por TTL si está disponible
+    if ($ttl !== null) {
+        if ($ttl <= 64) {
+            return 'Linux/Unix (Generic)';
+        } elseif ($ttl <= 128) {
+            return 'Windows (Generic)';
+        } else {
+            return 'Network Device';
+        }
+    }
+    
+    // 6. Fallback a genérico
+    return 'Desconocido';
+}
+
+    
     private function persistHost($host) {
     $ip = $host['ip'];
     $mac = $host['mac'];
     $hostname = $host['hostname'];
-    $osName = $host['os'] ?? 'Unknown';
+    
+    // Obtener datos del escáner
+    $osFromScanner = $host['os'] ?? 'Unknown';
+    $ttl = $host['ttl'] ?? null;
+    $openPorts = $host['open_ports'] ?? [];
+    $osHints = $host['os_hints'] ?? '';
     
     // VALIDAR MAC ANTES DE PROCESAR
     if ($mac) {
@@ -292,6 +552,12 @@ class Processor {
         $mac = null;
     }
     
+    // DETECTAR Y MAPEAR SISTEMA OPERATIVO
+    $osName = $this->detectAndMapOS($osFromScanner, $hostname, $openPorts, $ttl);
+    
+    // Log para debugging
+    writeLog("Host $ip -> OS Scanner: '$osFromScanner' -> Mapeado: '$osName' (TTL: " . ($ttl ?? 'N/A') . ", Hints: $osHints)", 'INFO');
+    
     // Fabricante (OUI)
     $fabricanteId = 1; // Default desconocido
     
@@ -303,22 +569,43 @@ class Processor {
         }
     }
     
-    // Sistema Operativo
+    // Sistema Operativo - obtener o crear ID
     $soId = $this->getOrCreateSO($osName);
     
     // Upsert Equipo CON MANEJO DE ERRORES MEJORADO
     try {
         $equipoId = $this->upsertEquipo($hostname, $ip, $mac, $soId, $fabricanteId);
+        
+        // Si hay puertos abiertos, procesarlos
+        if (!empty($openPorts)) {
+            foreach ($openPorts as $portInfo) {
+                $portNum = is_array($portInfo) ? $portInfo['port'] : intval($portInfo);
+                $protocolName = is_array($portInfo) ? ($portInfo['protocol'] ?? 'Unknown') : 'Unknown';
+                
+                // Obtener o crear protocolo
+                $protoId = $this->getOrCreateProtocolo($portNum, $protocolName);
+                
+                // Vincular protocolo al equipo
+                if ($protoId) {
+                    $this->linkProtocolo($equipoId, $protoId, $portNum);
+                }
+            }
+        }
+        
+        return $equipoId;
+        
     } catch (PDOException $e) {
         // Si hay error de constraint, intentar con MAC nula
         if (strpos($e->getMessage(), 'chk_equipos_mac_length') !== false && $mac) {
-            WriteLog("Error de constraint MAC para $ip, intentando con MAC nula", 'WARNING');
+            writeLog("Error de constraint MAC para $ip, intentando con MAC nula", 'WARNING');
             $equipoId = $this->upsertEquipo($hostname, $ip, null, $soId, $fabricanteId);
+            return $equipoId;
         } else {
             throw $e;
         }
     }
 }
+
 
     // --- Helpers SQL ---
 
@@ -348,13 +635,45 @@ class Processor {
     }
 
     private function getOrCreateSO($nombre) {
-        $so = $this->fetchOne("SELECT id_so FROM sistemas_operativos WHERE nombre = ?", [$nombre]);
-        if ($so) return $so['id_so'];
-
+    // Limpiar y normalizar nombre
+    $nombre = trim($nombre);
+    
+    // Buscar primero coincidencia exacta
+    $so = $this->fetchOne("SELECT id_so FROM sistemas_operativos WHERE nombre = ?", [$nombre]);
+    
+    if ($so) {
+        writeLog("SO encontrado: '$nombre' -> ID: {$so['id_so']}", 'DEBUG');
+        return $so['id_so'];
+    }
+    
+    // Si no existe, intentar búsqueda aproximada (LIKE)
+    $so = $this->fetchOne("SELECT id_so FROM sistemas_operativos WHERE nombre LIKE ? LIMIT 1", ["%$nombre%"]);
+    
+    if ($so) {
+        writeLog("SO aproximado encontrado para '$nombre' -> ID: {$so['id_so']}", 'DEBUG');
+        return $so['id_so'];
+    }
+    
+    // Si no existe en absoluto, crear nuevo
+    writeLog("Creando nuevo SO: '$nombre'", 'INFO');
+    
+    try {
         $stmt = $this->pdo->prepare("INSERT INTO sistemas_operativos (nombre) VALUES (?)");
         $stmt->execute([$nombre]);
-        return $this->pdo->lastInsertId();
+        $newId = $this->pdo->lastInsertId();
+        
+        writeLog("Nuevo SO creado: '$nombre' -> ID: $newId", 'INFO');
+        return $newId;
+        
+    } catch (PDOException $e) {
+        // Si falla la inserción, usar el ID de "Desconocido"
+        writeLog("Error creando SO '$nombre': " . $e->getMessage() . " - Usando 'Desconocido'", 'WARNING');
+        
+        $so = $this->fetchOne("SELECT id_so FROM sistemas_operativos WHERE nombre = 'Desconocido' OR nombre = 'Unknown' LIMIT 1");
+        return $so ? $so['id_so'] : 1; // Fallback al ID 1
     }
+}
+
 
     private function upsertEquipo($hostname, $ip, $mac, $soId, $fabId) {
         // Intentar actualizar por IP primero

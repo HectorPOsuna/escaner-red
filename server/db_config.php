@@ -1,76 +1,85 @@
 <?php
-// db_config.php - en /lisi3309/ (raíz del proyecto)
+/**
+ * db_config.php - Configuración de Base de Datos
+ * Ubicación: /lisi3309/db_config.php (raíz del proyecto web)
+ */
 
-// NOTA: La función loadEnv() fue movida a receive.php para evitar duplicación
-// Esta versión asume que $_ENV ya está cargado desde receive.php
-
-// Verificar si $_ENV está cargado
-if (empty($_ENV)) {
-    // Si no está cargado, cargarlo aquí como fallback
-    $envPath = __DIR__ . '/.env';
-    if (file_exists($envPath)) {
-        $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            if (strpos(trim($line), '#') === 0) continue;
-            if (strpos($line, '=') !== false) {
-                list($name, $value) = explode('=', $line, 2);
-                $name = trim($name);
-                $value = trim($value);
-                $value = trim($value, "\"'");
+// Cargar variables de entorno desde .env si existe
+function loadEnvFile($path) {
+    if (!file_exists($path)) {
+        return false;
+    }
+    
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if (empty($line) || $line[0] === '#') {
+            continue;
+        }
+        
+        if (strpos($line, '=') !== false) {
+            list($name, $value) = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value);
+            $value = trim($value, "\"'");
+            
+            if (!isset($_ENV[$name])) {
                 $_ENV[$name] = $value;
+                putenv("$name=$value");
             }
         }
     }
+    return true;
 }
 
-// Configuración de conexión (con valores por defecto más robustos)
-$config = [
-    'host' => $_ENV['DB_HOST'] ?? 'dsantana.fimaz.uas.edu.mx',
-    'port' => $_ENV['DB_PORT'] ?? 3306,
-    'dbname' => $_ENV['DB_NAME'] ?? 'lisi3309',
-    'username' => $_ENV['DB_USER'] ?? 'lisi3309',
-    'password' => $_ENV['DB_PASSWORD'] ?? '123tamarindo',
+// Intentar cargar .env
+$envPath = __DIR__ . '/.env';
+loadEnvFile($envPath);
+
+// Configuración de conexión usando variables de entorno
+$dbConfig = [
+    'host' => getenv('DB_HOST') ?: ($_ENV['DB_HOST'] ?? 'dsantana.fimaz.uas.edu.mx'),
+    'port' => getenv('DB_PORT') ?: ($_ENV['DB_PORT'] ?? 3306),
+    'dbname' => getenv('DB_NAME') ?: ($_ENV['DB_NAME'] ?? 'lisi3309'),
+    'username' => getenv('DB_USER') ?: ($_ENV['DB_USER'] ?? 'lisi3309'),
+    'password' => getenv('DB_PASSWORD') ?: ($_ENV['DB_PASSWORD'] ?? ''),
     'charset' => 'utf8mb4'
 ];
 
-// Log para debugging (opcional)
-if ($_ENV['DEBUG'] ?? false) {
-    error_log("DB Config: " . json_encode(array_merge($config, ['password' => '***'])));
-}
-
 try {
-    $dsn = "mysql:host={$config['host']};port={$config['port']};dbname={$config['dbname']};charset={$config['charset']}";
-    $pdo = new PDO($dsn, $config['username'], $config['password'], [
+    $dsn = sprintf(
+        "mysql:host=%s;port=%d;dbname=%s;charset=%s",
+        $dbConfig['host'],
+        $dbConfig['port'],
+        $dbConfig['dbname'],
+        $dbConfig['charset']
+    );
+    
+    $pdo = new PDO($dsn, $dbConfig['username'], $dbConfig['password'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
-        PDO::ATTR_PERSISTENT => false
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
     ]);
     
+    // Configurar zona horaria
     $pdo->exec("SET time_zone = 'America/Mazatlan'");
     
 } catch (PDOException $e) {
     error_log("Database Connection Error: " . $e->getMessage());
     
-    $errorCode = $e->getCode();
-    switch ($errorCode) {
-        case 2002:
-            $message = "No se puede conectar al servidor MySQL. Verifica el host y puerto.";
-            break;
-        case 1045:
-            $message = "Acceso denegado. Verifica usuario y contraseña.";
-            break;
-        case 1049:
-            $message = "La base de datos '{$config['dbname']}' no existe.";
-            break;
-        default:
-            $message = "Error de base de datos: " . $e->getMessage();
+    // Respuesta JSON si es una petición API
+    if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/api/') !== false) {
+        header('Content-Type: application/json');
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Database connection failed',
+            'message' => 'No se pudo conectar a la base de datos'
+        ]);
+        exit;
     }
     
-    if ($_ENV['DEBUG'] ?? false) {
-        die("<h3>Error de Base de Datos</h3><p>$message</p><p>Detalles: " . $e->getMessage() . "</p>");
-    } else {
-        die("<h3>Error del Sistema</h3><p>Por favor, contacta al administrador.</p>");
-    }
+    // Mensaje de error genérico
+    die('<h3>Error de Conexión</h3><p>No se pudo conectar a la base de datos. Por favor, contacta al administrador.</p>');
 }
-?>

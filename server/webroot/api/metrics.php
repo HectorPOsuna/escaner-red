@@ -1,6 +1,7 @@
 <?php
 // metrics.php - SSE Server-Sent Events CORREGIDO
 
+// metrics.php está en /lisi3309/api/, db_config.php está en /lisi3309/
 require_once __DIR__ . '/../db_config.php';
 
 // Validación de sesión MANUAL (sin check.php)

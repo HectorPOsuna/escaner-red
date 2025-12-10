@@ -1,28 +1,24 @@
-const runMigration = require('./scripts/migrate');
-const seedOui = require('./seed/seed_oui');
-const seedProtocolos = require('./seed/seed_protocolos');
+const CompleteSeeder = require('./seed/complete_seed');
 
 async function init() {
-    console.log('========================================');
-    console.log('🛠️  INICIALIZACIÓN DE BASE DE DATOS JS');
-    console.log('========================================');
-
+    console.log('='.repeat(50));
+    console.log('🛠️  INICIALIZACIÓN COMPLETA DE BASE DE DATOS');
+    console.log('='.repeat(50));
+    
     try {
-        await runMigration();
-        console.log('\n----------------------------------------\n');
+        const seeder = new CompleteSeeder();
+        await seeder.runAll();
         
-        await seedOui();
-        console.log('\n----------------------------------------\n');
-        
-        await seedProtocolos();
-        console.log('\n----------------------------------------\n');
-        
-        console.log('✨ TODO COMPLETADO CORRECTAMENTE ✨');
+        console.log('\n✨ INICIALIZACIÓN COMPLETADA ✨');
         process.exit(0);
+        
     } catch (error) {
         console.error('❌ Falló la inicialización:', error);
         process.exit(1);
     }
 }
 
-init();
+// Ejecutar si se llama directamente
+if (require.main === module) {
+    init();
+}

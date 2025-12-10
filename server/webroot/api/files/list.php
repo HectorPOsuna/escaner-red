@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../../db_config.php';
+require_once __DIR__ . '/../../../db_config.php';
 
 if (session_status() === PHP_SESSION_NONE) session_start();
 if (!isset($_SESSION['user_id'])) {
@@ -8,7 +8,8 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$secureDir = __DIR__ . '/../../../secure_downloads/';
+// Directorio seguro fuera del webroot
+$secureDir = '/var/www/secure_downloads/';
 $files = [];
 
 if (is_dir($secureDir)) {

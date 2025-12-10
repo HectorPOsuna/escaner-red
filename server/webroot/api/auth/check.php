@@ -1,30 +1,47 @@
 <?php
-// check.php - VERSIÓN MEJORADA (retorna, no imprime)
+/**
+ * check.php - Verificación de Autenticación
+ * Ubicación: /lisi3309/api/auth/check.php
+ */
 
-function checkAuthentication() {
-    if (session_status() === PHP_SESSION_NONE) {
-        ini_set('session.cookie_httponly', 1);
+// Headers
+header('Content-Type: application/json');
+header('Access-Control-Allow-Credentials: true');
+header('Cache-Control: no-cache, must-revalidate');
+
+// Iniciar sesión si no está iniciada
+if (session_status() === PHP_SESSION_NONE) {
+    // Configurar sesión segura
+    ini_set('session.cookie_httponly', 1);
+    ini_set('session.cookie_samesite', 'Lax');
+    ini_set('session.use_strict_mode', 1);
+    
+    // Solo usar secure en HTTPS
+    if (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
         ini_set('session.cookie_secure', 1);
-        session_start();
     }
     
-    if (isset($_SESSION['user_id'])) {
-        return [
-            'authenticated' => true,
-            'user' => [
-                'username' => $_SESSION['username'],
-                'role' => $_SESSION['role']
-            ],
-            'csrf_token' => $_SESSION['csrf_token']
-        ];
-    } else {
-        return ['authenticated' => false];
-    }
+    session_start();
 }
 
-// Si se accede directamente, sí imprimir (para compatibilidad)
-if (basename(__FILE__) == basename($_SERVER['PHP_SELF'])) {
-    header('Content-Type: application/json');
-    echo json_encode(checkAuthentication());
-    exit;
+// Preparar respuesta
+$response = [
+    'authenticated' => false,
+    'user' => null,
+    'csrf_token' => null
+];
+
+// Verificar si hay sesión activa
+if (isset($_SESSION['user_id']) && isset($_SESSION['username'])) {
+    $response['authenticated'] = true;
+    $response['user'] = [
+        'id' => $_SESSION['user_id'],
+        'username' => $_SESSION['username'],
+        'role' => $_SESSION['role'] ?? 'user'
+    ];
+    $response['csrf_token'] = $_SESSION['csrf_token'] ?? null;
 }
+
+// Enviar respuesta
+echo json_encode($response);
+exit;
