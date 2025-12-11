@@ -296,6 +296,7 @@ class Processor {
         $osMapping = [
             // Windows
             'windows' => 'Windows (Generic)',
+            'windows (generic)' => 'Windows (Generic)',
             'windows 11' => 'Windows 11',
             'windows 10' => 'Windows 10',
             'windows 8.1' => 'Windows 8.1',
@@ -310,6 +311,7 @@ class Processor {
             
             // Linux/Unix
             'linux/unix' => 'Linux/Unix (Generic)',
+            'linux/unix (generic)' => 'Linux/Unix (Generic)',
             'linux/unix (ssh)' => 'Linux/Unix (Generic)',
             'ubuntu' => 'Ubuntu',
             'debian' => 'Debian',
@@ -676,14 +678,34 @@ class Processor {
 
 
     private function upsertEquipo($hostname, $ip, $mac, $soId, $fabId) {
-        // Intentar actualizar por IP primero
-        $existing = $this->fetchOne("SELECT id_equipo FROM equipos WHERE ip = ?", [$ip]);
+        // Intentar actualizar por IP primero (Traer todos los datos para comparar)
+        $existing = $this->fetchOne("SELECT * FROM equipos WHERE ip = ?", [$ip]);
         
         if ($existing) {
+            $changes = false;
+            $equipoId = $existing['id_equipo'];
+
+            // 1. Detectar cambio de Hostname
+            if (($existing['hostname'] != $hostname) && !empty($hostname) && $hostname != 'Desconocido') {
+                $oldHost = $existing['hostname'] ?: 'N/A';
+                $this->createAuditLog($equipoId, "Hostname actualizado: De '$oldHost' a '$hostname'");
+            }
+
+            // 2. Detectar cambio de OS
+            if ($existing['id_so'] != $soId) {
+                 // Opcional: Podríamos buscar el nombre del SO viejo/nuevo para ser más explícitos
+                $this->createAuditLog($equipoId, "Sistema Operativo actualizado");
+            }
+
+            // 3. Detectar cambio de Fabricante (si era desconocido y ya no lo es)
+            if ($existing['fabricante_id'] == 1 && $fabId != 1) {
+                $this->createAuditLog($equipoId, "Fabricante identificado");
+            }
+
             $sql = "UPDATE equipos SET hostname = ?, mac = ?, id_so = ?, fabricante_id = ?, ultima_deteccion = NOW() WHERE ip = ?";
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute([$hostname, $mac, $soId, $fabId, $ip]);
-            return $existing['id_equipo'];
+            return $equipoId;
         } else {
             // Insertar o manejar duplicado de MAC
             try {
@@ -691,7 +713,12 @@ class Processor {
                         VALUES (?, ?, ?, ?, ?, NOW())";
                 $stmt = $this->pdo->prepare($sql);
                 $stmt->execute([$hostname, $ip, $mac, $soId, $fabId]);
-                return $this->pdo->lastInsertId();
+                $newId = $this->pdo->lastInsertId();
+
+                // Log de Nuevo Dispositivo
+                $this->createAuditLog($newId, "Nuevo dispositivo detectado: $hostname ($ip)");
+
+                return $newId;
             } catch (PDOException $e) {
                 // Error 23000 es violación de constraint (probablemente MAC duplicada)
                 if ($e->getCode() == 23000 && strpos($e->getMessage(), 'mac') !== false) {
@@ -703,7 +730,17 @@ class Processor {
                     return $rec['id_equipo'];
                 }
                 throw $e;
-            }
+                private function createAuditLog($equipoId, $mensaje) {
+        try {
+            $sql = "INSERT INTO logs (id_equipo, mensaje, nivel, fecha_hora) VALUES (?, ?, 'info', NOW())";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute([$equipoId, $mensaje]);
+        } catch (Exception $e) {
+            // Silently fail logging to not disrupt main flow
+            writeLog("Error writing audit log: " . $e->getMessage(), 'ERROR');
+        }
+    }
+}
         }
     }
 

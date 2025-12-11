@@ -72,6 +72,7 @@ Copy-Item "$AgentSrc\config.ps1" -Destination $AgentDest
 # --------------------------------------------------------------------------------
 Write-Host "4. Copiando Backend PHP..." -ForegroundColor Green
 Copy-Item "$RootDir\server\api\receive.php" -Destination "$PackageDir\Server\receive.php"
+Copy-Item "$RootDir\server\webroot\*" -Destination "$PackageDir\Server" -Recurse
 Copy-Item "$RootDir\.env" -Destination "$PackageDir\Server\.env.example" # Plantilla
 
 # --------------------------------------------------------------------------------

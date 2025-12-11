@@ -144,11 +144,26 @@ namespace NetworkScanner.UI
             }
         }
 
-        // --- LÓGICA DE ESCANEO ---
+        private void Txt_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.TextBox txt)
+            {
+                if (txt.Name == "TxtSubnet" && PlaceholderSubnet != null) 
+                    PlaceholderSubnet.Visibility = string.IsNullOrEmpty(txt.Text) ? Visibility.Visible : Visibility.Collapsed;
+                if (txt.Name == "TxtIpStart" && PlaceholderStart != null) 
+                    PlaceholderStart.Visibility = string.IsNullOrEmpty(txt.Text) ? Visibility.Visible : Visibility.Collapsed;
+                if (txt.Name == "TxtIpEnd" && PlaceholderEnd != null) 
+                    PlaceholderEnd.Visibility = string.IsNullOrEmpty(txt.Text) ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
         private async void StartScan()
         {
+            string subnet = TxtSubnet.Text.Trim();
             string ipStart = TxtIpStart.Text.Trim();
             string ipEnd = TxtIpEnd.Text.Trim();
+
+            // Validación básica
+            if (string.IsNullOrEmpty(subnet)) subnet = "192.168.1.";
 
             BtnAction.IsEnabled = false;
             BtnAction.Content = "ESCANEANDO...";
@@ -156,15 +171,11 @@ namespace NetworkScanner.UI
             ProgressPercentage.Text = "0%";
             StatusText.Text = "Iniciando escaneo...";
             TxtResultLog.Text = "";
-            SaveSettings(ipStart, ipEnd); // Guardamos IP de inicio y fin como referencia
+            SaveSettings(subnet, ipStart, ipEnd);
 
             try
             {
-                // TODO: Pasar start/end al controller
-                // Por ahora pasamos start como "subnet" para compatibilidad, 
-                // ScanController necesita update para start/end
-                string subnetPrefix = ipStart.Substring(0, ipStart.LastIndexOf('.') + 1); 
-                await _scanController.StartScanAsync(subnetPrefix, ipStart, ipEnd, true);
+                await _scanController.StartScanAsync(subnet, ipStart, ipEnd, true);
             }
             catch (Exception ex)
             {
@@ -237,6 +248,7 @@ namespace NetworkScanner.UI
         }
 
         // --- SISTEMA ---
+        // --- SISTEMA ---
         private void LoadSettings()
         {
             try
@@ -249,28 +261,32 @@ namespace NetworkScanner.UI
                         if (doc.RootElement.TryGetProperty("ScannerSettings", out var settings))
                         {
                             if (settings.TryGetProperty("SubnetPrefix", out var subnet))
-                            {
-                                // Trivial restore
-                                TxtIpStart.Text = subnet.GetString() + "1";
-                                TxtIpEnd.Text = subnet.GetString() + "254";
-                            }
+                                TxtSubnet.Text = subnet.GetString();
+                                
+                            if (settings.TryGetProperty("StartIP", out var start))
+                                TxtIpStart.Text = start.GetString();
+                                
+                            if (settings.TryGetProperty("EndIP", out var end))
+                                TxtIpEnd.Text = end.GetString();
                         }
                     }
                 }
+                
+                // Defaults if empty
+                if (string.IsNullOrEmpty(TxtSubnet.Text)) TxtSubnet.Text = "192.168.1.";
             }
             catch { }
         }
 
-        private void SaveSettings(string ipStart, string ipEnd)
+        private void SaveSettings(string subnet, string ipStart, string ipEnd)
         {
             try
             {
-                string prefix = ipStart.Substring(0, ipStart.LastIndexOf('.') + 1);
                 var simpleConfig = new 
                 { 
                     ScannerSettings = new 
                     { 
-                        SubnetPrefix = prefix,
+                        SubnetPrefix = subnet,
                         StartIP = ipStart,
                         EndIP = ipEnd
                     } 

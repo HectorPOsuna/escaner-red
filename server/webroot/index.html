@@ -4,8 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monitor de Red - Dashboard</title>
+    <script>
+        // Verificación de Sesión (Simple)
+        const session = localStorage.getItem('network_session');
+        if (!session) {
+            window.location.href = 'login.html';
+        }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -114,6 +122,38 @@
         .devices-section h3 {
             margin-bottom: 15px;
         }
+        
+        /* Tabs Styles - Minimal Title Look */
+        .tabs-header {
+            display: flex;
+            align-items: center;
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+        
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            font-size: 1.5rem; /* Title Size */
+            font-weight: 700;
+            color: #64748b; /* Dimmed */
+            cursor: pointer;
+            transition: color 0.3s ease;
+            position: relative;
+        }
+        
+        .tab-btn:hover {
+            color: #94a3b8;
+        }
+        
+        .tab-btn.active {
+            color: #f8fafc; /* Bright White */
+        }
+        
+        /* Optional: Add a subtle separator or indicator if needed, 
+           but user asked for 'simplemente texto' */
         
         .devices-table {
             width: 100%;
@@ -337,6 +377,9 @@
             <span class="status-dot" id="sse-status"></span>
             <span>Monitoreo en Tiempo Real</span>
         </div>
+        <div style="position: absolute; top: 20px; right: 20px;">
+            <button class="btn btn-secondary" onclick="logout()" style="padding: 5px 10px; font-size: 0.8rem;">Cerrar Sesión</button>
+        </div>
     </div>
     
     <div class="stats-grid">
@@ -359,7 +402,7 @@
     </div>
     
     <div class="actions">
-        <a href="/lisi3309/downloads/NetworkScanner_Setup.exe" class="btn" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 5px;" download>
+        <a href="downloads/NetworkScanner_Setup.exe" class="btn" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 5px;" download>
             📥 Descargar Escáner
         </a>
         <button class="btn" onclick="exportPDF()">📄 Exportar PDF</button>
@@ -383,21 +426,47 @@
     </div>
     
     <div class="devices-section">
-        <h3>Dispositivos</h3>
-        <table class="devices-table">
-            <thead>
-                <tr>
-                    <th>Hostname</th>
-                    <th>IP</th>
-                    <th>MAC</th>
-                    <th>Protocolos</th>
-                    <th>Última Detección</th>
-                </tr>
-            </thead>
-            <tbody id="devices-tbody">
-                <tr><td colspan="5" style="text-align:center;">Cargando...</td></tr>
-            </tbody>
-        </table>
+        <div class="tabs-header">
+            <button class="tab-btn active" onclick="switchTab('devices')">Dispositivos</button>
+            <button class="tab-btn" onclick="switchTab('conflicts')">Conflictos Detectados</button>
+        </div>
+
+        <!-- Tabla Dispositivos -->
+        <div id="tab-devices" class="tab-content active">
+            <table class="devices-table">
+                <thead>
+                    <tr>
+                        <th>Hostname</th>
+                        <th>IP</th>
+                        <th>MAC</th>
+                        <th>Protocolos</th>
+                        <th>Última Detección</th>
+                    </tr>
+                </thead>
+                <tbody id="devices-tbody">
+                    <tr><td colspan="5" style="text-align:center;">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tabla Conflictos -->
+        <div id="tab-conflicts" class="tab-content" style="display: none;">
+            <table class="devices-table">
+                <thead>
+                    <tr>
+                        <th>IP</th>
+                        <th>MAC</th>
+                        <th>Hostname (Conflicto)</th>
+                        <th>Descripción</th>
+                        <th>Fecha Detección</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody id="conflicts-tbody">
+                    <tr><td colspan="6" style="text-align:center;">Cargando conflictos...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
     
     <!-- Modal de Detalles del Dispositivo -->
@@ -442,17 +511,22 @@
             initSSE();
             setInterval(refreshData, 30000);
         }
+
+        function logout() {
+            localStorage.removeItem('network_session');
+            window.location.href = 'login.html';
+        }
         
         // Cargar datos
         async function loadData() {
             try {
-                const protocolsRes = await fetch('/lisi3309/api/dashboard.php?action=protocol_stats');
+                const protocolsRes = await fetch('api/dashboard.php?action=protocol_stats');
                 const protocolsData = await protocolsRes.json();
                 
-                const categoryStatsRes = await fetch('/lisi3309/api/dashboard.php?action=category_device_stats');
+                const categoryStatsRes = await fetch('api/dashboard.php?action=category_device_stats');
                 const categoryStatsData = await categoryStatsRes.json();
                 
-                const devicesRes = await fetch('/lisi3309/api/dashboard.php?action=devices&limit=100');
+                const devicesRes = await fetch('api/dashboard.php?action=devices&limit=100');
                 const devicesData = await devicesRes.json();
                 
                 allData.protocols = protocolsData;
@@ -731,7 +805,7 @@
             
             // Obtener detalles completos del dispositivo
             try {
-                const response = await fetch(`/lisi3309/api/dashboard.php?action=details&id=${device.id}`);
+                const response = await fetch(`api/dashboard.php?action=details&id=${device.id || device.id_equipo}`);
                 const data = await response.json();
                 
                 if (!data.success) {
@@ -834,7 +908,7 @@
         async function showProtocolDetails(categoria, detailed = false) {
             try {
                 const action = detailed ? 'protocol_details_detailed' : 'protocol_details';
-                const response = await fetch(`/lisi3309/api/dashboard.php?action=${action}&categoria=${categoria}`);
+                const response = await fetch(`api/dashboard.php?action=${action}&categoria=${categoria}`);
                 const data = await response.json();
                 
                 if (!data.success) {
@@ -953,7 +1027,7 @@
         
         function initSSE() {
             try {
-                sseConnection = new EventSource('/lisi3309/api/metrics.php');
+                sseConnection = new EventSource('api/metrics.php');
                 
                 sseConnection.onmessage = (event) => {
                     const data = JSON.parse(event.data);
@@ -974,45 +1048,161 @@
             }
         }
         
-        function exportPDF() {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            
-            doc.setFontSize(20);
-            doc.text('Monitor de Red - Reporte', 20, 20);
-            
-            doc.setFontSize(12);
-            doc.text(`Total Dispositivos: ${allData.stats.total_equipos || 0}`, 20, 40);
-            doc.text(`Activos: ${allData.stats.activos_5min || 0}`, 20, 50);
-            doc.text(`Protocolos: ${allData.protocols.totals?.total || 0}`, 20, 60);
-            
-            doc.text('Top Dispositivos:', 20, 80);
-            let y = 90;
-            allData.devices.slice(0, 10).forEach((device, i) => {
-                doc.text(`${i+1}. ${device.hostname || device.ip} - ${device.total_protocols} protocolos`, 25, y);
-                y += 10;
-            });
-            
-            doc.save('monitor-red.pdf');
+        async function exportPDF() {
+            try {
+                // Obtener datos COMPLETOS
+                const response = await fetch('api/dashboard.php?action=export_data');
+                const result = await response.json();
+                
+                if (!result.success) {
+                    alert('Error obteniendo datos para exportar');
+                    return;
+                }
+                
+                const devices = result.data;
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'landscape' });
+                
+                // Título
+                doc.setFontSize(18);
+                doc.text('Reporte Completo de Dispositivos - Monitor de Red', 14, 20);
+                doc.setFontSize(10);
+                doc.text(`Generado: ${new Date().toLocaleString('es-MX')}`, 14, 28);
+                
+                // Tabla
+                doc.autoTable({
+                    startY: 35,
+                    head: [['IP', 'Hostname', 'MAC', 'Sistema Op.', 'Fabricante', 'Puertos Abiertos (Últ. Escaneo)', 'Última Detección']],
+                    body: devices.map(d => [
+                        d.ip,
+                        d.hostname || 'N/A',
+                        d.mac || 'N/A',
+                        d.os || 'Desconocido',
+                        d.manufacturer || 'Desconocido',
+                        d.ports_details || 'Ninguno', // Muestra "80/HTTP (10/12 14:00)"
+                        d.last_seen
+                    ]),
+                    styles: { fontSize: 8 },
+                    headStyles: { fillColor: [30, 41, 59] }, // #1e293b
+                    columnStyles: {
+                        5: { cellWidth: 80 } // Ancho extra para columna de puertos
+                    }
+                });
+                
+                doc.save(`reporte_red_completo_${new Date().toISOString().slice(0,10)}.pdf`);
+                
+            } catch (error) {
+                console.error('Error export PDF:', error);
+                alert('Hubo un error al generar el PDF');
+            }
         }
         
-        function exportCSV() {
-            let csv = 'Hostname,IP,Total Protocolos,Seguros,Inseguros\n';
-            
-            allData.devices.forEach(device => {
-                csv += `"${device.hostname || 'N/A'}","${device.ip}",${device.total_protocols || 0},${device.secure_count || 0},${device.insecure_count || 0}\n`;
-            });
-            
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'dispositivos.csv';
-            a.click();
+        async function exportCSV() {
+            try {
+                // Obtener datos COMPLETOS
+                const response = await fetch('api/dashboard.php?action=export_data');
+                const result = await response.json();
+                
+                if (!result.success) {
+                    alert('Error obteniendo datos para exportar');
+                    return;
+                }
+                
+                const devices = result.data;
+                
+                // BOM para Excel
+                let csv = '\uFEFF';
+                // Headers
+                csv += 'IP,Hostname,MAC,Sistema Operativo,Fabricante,Puertos Abiertos,Ultima Deteccion\n';
+                
+                devices.forEach(d => {
+                    const ports = d.ports_details ? d.ports_details.replace(/\n/g, ' | ') : 'Ninguno';
+                    const row = [
+                        d.ip,
+                        d.hostname || 'N/A',
+                        d.mac || 'N/A',
+                        d.os || 'Desconocido',
+                        d.manufacturer || 'Desconocido',
+                        `"${ports}"`, // Comillas para manejar espacios y pipes
+                        d.last_seen
+                    ];
+                    csv += row.join(',') + '\n';
+                });
+                
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `reporte_red_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+                
+            } catch (error) {
+                console.error('Error export CSV:', error);
+                alert('Hubo un error al generar el CSV');
+            }
         }
         
         async function refreshData() {
             await loadData();
+            // Si la tab de conflictos está activa, recargarla también
+            if (document.getElementById('tab-conflicts').style.display !== 'none') {
+                 loadConflicts();
+            }
+        }
+        
+        // Tab Logic
+        function switchTab(tabName) {
+            // Update buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Hide all contents
+            document.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+            
+            // Show selected
+            document.getElementById(`tab-${tabName}`).style.display = 'block';
+            
+            if (tabName === 'conflicts') {
+                loadConflicts();
+            }
+        }
+        
+        async function loadConflicts() {
+            try {
+                const tbody = document.getElementById('conflicts-tbody');
+                
+                const response = await fetch('api/dashboard.php?action=get_conflicts');
+                const result = await response.json();
+                
+                if (!result.success) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: #ef4444;">Error cargando conflictos</td></tr>';
+                    return;
+                }
+                
+                const data = result.data;
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: #94a3b8;">No se han detectado conflictos</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = data.map(c => `
+                    <tr>
+                        <td style="font-family: monospace;">${c.ip || 'N/A'}</td>
+                        <td style="font-family: monospace;">${c.mac || 'N/A'}</td>
+                        <td>${c.hostname_conflictivo || 'Desconocido'}</td>
+                        <td>${c.descripcion}</td>
+                        <td>${new Date(c.fecha_detectado).toLocaleString('es-MX')}</td>
+                        <td>
+                            <span class="protocol-badge ${c.estado === 'activo' ? 'insecure' : 'secure'}">
+                                ${c.estado}
+                            </span>
+                        </td>
+                    </tr>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Error loading conflicts:', error);
+            }
         }
         
         window.addEventListener('DOMContentLoaded', init);

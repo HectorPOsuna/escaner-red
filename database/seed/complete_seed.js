@@ -9,8 +9,29 @@ class CompleteSeeder {
         this.stats = {
             sistemas_operativos: 0,
             fabricantes: 0,
-            protocolos: 0
+            protocolos: 0,
+            usuarios: 0
         };
+    }
+
+    async seedUsers() {
+        console.log('\n👤 Sembrando Usuarios...');
+        const seedPath = path.join(__dirname, 'users_seed.sql');
+        try {
+            const sql = fs.readFileSync(seedPath, 'utf8');
+            // Split by semicolon in case of multiple statements, though here it's likely one
+            const statements = sql.split(';').filter(s => s.trim());
+            
+            for (const stmt of statements) {
+                await this.connection.query(stmt);
+            }
+            
+            const [rows] = await this.connection.execute('SELECT COUNT(*) as count FROM users');
+            this.stats.usuarios = rows[0].count;
+            console.log(`✅ Usuarios: ${rows[0].count} registros`);
+        } catch (error) {
+             console.error('❌ Error sembrando usuarios:', error.message);
+        }
     }
 
     async connect() {
@@ -244,6 +265,7 @@ class CompleteSeeder {
             await this.seedSistemasOperativos();
             await this.seedFabricantes();
             await this.seedProtocolos();
+            await this.seedUsers();
             
             // Mostrar resumen
             console.log('\n' + '='.repeat(60));
@@ -252,6 +274,7 @@ class CompleteSeeder {
             console.log(`✅ Sistemas Operativos: ${this.stats.sistemas_operativos}`);
             console.log(`✅ Fabricantes (OUI): ${this.stats.fabricantes}`);
             console.log(`✅ Protocolos: ${this.stats.protocolos}`);
+            console.log(`✅ Usuarios: ${this.stats.usuarios}`);
             console.log('\n✨ SEEDING COMPLETADO EXITOSAMENTE ✨');
             
         } catch (error) {

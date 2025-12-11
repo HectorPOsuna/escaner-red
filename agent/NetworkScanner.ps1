@@ -55,6 +55,8 @@ else {
     $PhpExecutable = "php"
     $EnableLogging = $true
     $LogFile = "scanner.log"
+    $StartIP = $null
+    $EndIP = $null
 }
 
 # Configurar rutas
@@ -266,9 +268,44 @@ if ($MyInvocation.InvocationName -ne '.') {
 # ==============================================================================
 
 function Get-IpRange {
-    param([string]$Prefix)
+    param(
+        [string]$Prefix,
+        [string]$StartIP = $null,
+        [string]$EndIP = $null
+    )
     
     $ips = @()
+
+    # Si se especifican StartIP y EndIP, usarlos
+    if (-not [string]::IsNullOrWhiteSpace($StartIP) -and -not [string]::IsNullOrWhiteSpace($EndIP)) {
+        Write-Host "[INFO] Usando rango personalizado: $StartIP - $EndIP" -ForegroundColor Cyan
+        try {
+            # Convertir ultimo octeto a entero
+            $startOctet = [int]($StartIP.Split('.')[-1])
+            $endOctet = [int]($EndIP.Split('.')[-1])
+            
+            # Validar mismo prefijo (simple check)
+            $startPrefix = $StartIP.Substring(0, $StartIP.LastIndexOf('.') + 1)
+            
+            if ($startPrefix -eq $Prefix) {
+                if ($startOctet -le $endOctet) {
+                    for ($i = $startOctet; $i -le $endOctet; $i++) {
+                        $ips += "${Prefix}${i}"
+                    }
+                    return $ips
+                } else {
+                     Write-Host "[WARN] StartIP es mayor que EndIP. Usando rango completo." -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host "[WARN] StartIP no coincide con el prefijo de Subred. Usando rango completo." -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "[ERROR] Error al parsear rango de IPs: $($_.Exception.Message). Usando rango completo." -ForegroundColor Red
+        }
+    }
+
+    # Fallback o default: Rango completo 1-254
+    Write-Host "[INFO] Escaneando subred completa: ${Prefix}1-254" -ForegroundColor DarkGray
     for ($i = 1; $i -lt 255; $i++) {
         $ips += "${Prefix}${i}"
     }
@@ -310,9 +347,25 @@ function Get-HostInfo {
             $info.Hostname = "Host-$IpAddress"
         }
         
-        # 2. Obtener MAC (método existente)
-        $mac = Get-NetNeighbor -IPAddress $IpAddress -ErrorAction SilentlyContinue | 
-               Select-Object -First 1 -ExpandProperty LinkLayerAddress
+        # 2. Obtener MAC
+        $mac = $null
+        
+        # A) Verificar si es la máquina local
+        $localInterface = Get-NetIPAddress -IPAddress $IpAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue
+        if ($localInterface) {
+            $adapter = Get-NetAdapter -InterfaceIndex $localInterface.InterfaceIndex -ErrorAction SilentlyContinue
+            if ($adapter) {
+                $formattedMac = $adapter.MacAddress -replace ':', '-'
+                $mac = $formattedMac
+                Write-Host "  MAC (Local): $mac" -ForegroundColor Gray
+            }
+        }
+
+        # B) Si no es local, intentar Get-NetNeighbor (ARP cache)
+        if (-not $mac) {
+            $mac = Get-NetNeighbor -IPAddress $IpAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | 
+                   Select-Object -First 1 -ExpandProperty LinkLayerAddress
+        }
         
         if ($mac) {
             $info.MAC = $mac
@@ -339,14 +392,15 @@ function Get-HostInfo {
                 $ttl = $reply.Options.Ttl
                 $info.TTL = $ttl
                 
-                # Detección por TTL (base)
-                $baseOS = if ($ttl -le 64) { "Linux/Unix" }
-                         elseif ($ttl -le 128) { "Windows" }
+                # Detección por TTL (SOLO FALLBACK)
+                $ttlOS = if ($ttl -le 64) { "Linux/Unix (Generic)" }
+                         elseif ($ttl -le 128) { "Windows (Generic)" }
                          else { "Network Device" }
                 
-                $info.OS = $baseOS
                 $info.OS_Hints += "TTL:$ttl"
                 
+                # ... (Hostname logic remains here, stored in $osByHostname) ...
+
                 # ANÁLISIS POR HOSTNAME
                 $hostnameLower = $info.Hostname.ToLower()
                 $osByHostname = $null
@@ -416,7 +470,7 @@ function Get-HostInfo {
                     445 = 'Windows'         # SMB
                     139 = 'Windows'         # NetBIOS
                     135 = 'Windows'         # RPC
-                    22 = 'Linux/Unix'       # SSH
+                    22 = 'Linux/Unix (Generic)' # SSH (Generic)
                     23 = 'Network Device'   # Telnet
                     161 = 'Network Device'  # SNMP
                     162 = 'Network Device'  # SNMP Trap
@@ -438,20 +492,26 @@ function Get-HostInfo {
                     }
                 }
                 
-                # DECISIÓN FINAL DEL SO
-                $detectedOS = $baseOS  # Por defecto
+                # DECISIÓN FINAL DEL SO (Reordenada)
+                $detectedOS = "Unknown"
                 
-                # Prioridad: Puertos > Hostname > TTL
+                # Prioridad 1: Puertos (La más fiable)
                 if ($osByPorts) {
                     $detectedOS = $osByPorts
-                } elseif ($osByHostname) {
+                } 
+                # Prioridad 2: Hostname
+                elseif ($osByHostname) {
                     $detectedOS = $osByHostname
+                }
+                # Prioridad 3: TTL (Solo si no hay nada más)
+                else {
+                    $detectedOS = $ttlOS
                 }
                 
                 # Refinamiento adicional
                 if ($detectedOS -eq "Windows" -and $ttl -eq 128) {
                     # Intentar detectar versión por puertos adicionales
-                    if ($OpenPorts.Port -contains 3389) {
+                     if ($OpenPorts.Port -contains 3389) {
                         $detectedOS = "Windows (RDP)"
                     } elseif ($OpenPorts.Port -contains 5985 -or $OpenPorts.Port -contains 5986) {
                         $detectedOS = "Windows (WinRM)"
@@ -459,10 +519,11 @@ function Get-HostInfo {
                 }
                 
                 # Si es Linux y tiene puerto 22, especificar
-                if ($detectedOS -eq "Linux/Unix" -and $OpenPorts.Port -contains 22) {
+                if ($detectedOS -eq "Linux/Unix (Generic)" -and $OpenPorts.Port -contains 22) {
                     $detectedOS = "Linux/Unix (SSH)"
                 }
                 
+                $info.OS = $detectedOS
                 $info.OS_Detailed = $detectedOS
                 Write-Host "  OS: $detectedOS (TTL: $ttl)" -ForegroundColor Green
                 if ($info.OS_Hints.Count -gt 1) {
@@ -702,7 +763,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     }
 
 # Generar IPs a escanear
-$targetIps = Get-IpRange -Prefix $SubnetPrefix
+$targetIps = Get-IpRange -Prefix $SubnetPrefix -StartIP $StartIP -EndIP $EndIP
 Write-Host "[OBJETIVOS] $($targetIps.Count) IPs a escanear" -ForegroundColor Yellow
 
 # --- FASE 1: PARALLEL PING SWEEP ---
@@ -728,8 +789,6 @@ foreach ($ip in $aliveHosts) {
     Write-Host "[$counter/$totalAlive] Analizando $ip..." -ForegroundColor DarkGray
     
     # Ya sabemos que está viva por el sweep
-    # Obtener información del host
-    $hostInfo = Get-HostInfo -IpAddress $ip -OpenPorts $openPorts
     
     # Escanear puertos (Optimización: Solo en vivas)
     $openPorts = @()
@@ -737,6 +796,9 @@ foreach ($ip in $aliveHosts) {
         $openPorts = Scan-PortsByPriority -Ip $ip -Ports $CommonPorts -Cache $portCache
         Write-Host "  Puertos abiertos: $($openPorts.Count)" -ForegroundColor Cyan
     }
+
+    # Obtener información del host (Ahora sí tiene puertos para decidir OS)
+    $hostInfo = Get-HostInfo -IpAddress $ip -OpenPorts $openPorts
     
     # Agregar a resultados
     $results += [PSCustomObject]@{
