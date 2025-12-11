@@ -22,13 +22,13 @@ graph TD
         D -->|1. Valida Payload| D
         D -->|2. Procesa Lógica| E{Lógica Interna}
         E -->|3. Detecta| F[Conflictos IP/MAC]
-        E -->|4. Persiste| G[(MySQL Database)]
+        E -->|4. Persiste| G[("MySQL Database")]
     end
 
     subgraph "Visualización (Frontend)"
         H[Dashboard Web] -->|Consulta| I[API: dashboard.php]
         I -->|Lee| G
-        J[Tray App (C#)] -->|Monitorea| A
+        J["Tray App (C#)"] -->|Monitorea| A
     end
 ```
 
