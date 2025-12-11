@@ -54,23 +54,42 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     
+                    <!-- Subnet -->
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="IP Inicio:" FontSize="12" Foreground="#666"/>
-                        <TextBox x:Name="TxtIpStart" Text="192.168.100.1" FontFamily="Consolas"/>
+                        <TextBlock Text="Subred:" FontSize="12" Foreground="#666"/>
+                        <Grid>
+                            <TextBox x:Name="TxtSubnet" FontFamily="Consolas" TextChanged="Txt_TextChanged" Padding="5"/>
+                            <TextBlock x:Name="PlaceholderSubnet" Text="ej: 192.168.1." IsHitTestVisible="False" Foreground="Gray" Opacity="0.5" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        </Grid>
                     </StackPanel>
                     
-                    <TextBlock Grid.Column="1" Text="—" VerticalAlignment="Center" Margin="10,15,10,0" Foreground="Gray"/>
-                    
+                    <!-- Start IP -->
                     <StackPanel Grid.Column="2">
+                        <TextBlock Text="IP Inicio:" FontSize="12" Foreground="#666"/>
+                        <Grid>
+                            <TextBox x:Name="TxtIpStart" FontFamily="Consolas" TextChanged="Txt_TextChanged" Padding="5"/>
+                            <TextBlock x:Name="PlaceholderStart" Text="ej: 10" IsHitTestVisible="False" Foreground="Gray" Opacity="0.5" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        </Grid>
+                    </StackPanel>
+                    
+                    <TextBlock Grid.Column="3" Text="—" VerticalAlignment="Center" Margin="5,15,5,0" Foreground="Gray"/>
+                    
+                    <!-- End IP -->
+                    <StackPanel Grid.Column="4">
                         <TextBlock Text="IP Fin:" FontSize="12" Foreground="#666"/>
-                        <TextBox x:Name="TxtIpEnd" Text="192.168.100.254" FontFamily="Consolas"/>
+                        <Grid>
+                            <TextBox x:Name="TxtIpEnd" FontFamily="Consolas" TextChanged="Txt_TextChanged" Padding="5"/>
+                            <TextBlock x:Name="PlaceholderEnd" Text="ej: 50" IsHitTestVisible="False" Foreground="Gray" Opacity="0.5" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        </Grid>
                     </StackPanel>
                 </Grid>
-                <TextBlock Text="* Rango de IPs a analizar en busca de dispositivos." FontSize="11" Foreground="Gray" Margin="0,5,0,0"/>
+                <TextBlock Text="* Configure la subred y el rango de IPs a escanear." FontSize="11" Foreground="Gray" Margin="0,5,0,0"/>
             </StackPanel>
         </GroupBox>
 

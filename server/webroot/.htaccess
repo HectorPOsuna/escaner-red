@@ -1,0 +1,31 @@
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /lisi3309/
+    
+    # Bloquear archivos sensibles
+    RewriteRule ^\.(env|htaccess|htpasswd|ini|log|sh|sql|bak|git) - [F,L,NC]
+    RewriteRule ^db_config\.php$ - [F,L,NC]
+    
+    # Permitir acceso a archivos API
+    RewriteCond %{REQUEST_URI} ^/lisi3309/api/
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+    
+    # Si existe archivo o directorio real, servirlo
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+    
+    # Todo lo demás a index.html (SPA)
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Access-Control-Allow-Credentials "true"
+</IfModule>

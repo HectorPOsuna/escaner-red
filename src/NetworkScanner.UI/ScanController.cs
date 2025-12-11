@@ -19,7 +19,7 @@ namespace NetworkScanner.UI
 
         private bool _isScanning;
 
-        public async Task StartScanAsync(string subnet, bool isManualMode)
+        public async Task StartScanAsync(string subnet, string startIp, string endIp, bool isManualMode)
         {
             _isScanning = true;
 
@@ -27,6 +27,8 @@ namespace NetworkScanner.UI
             var config = new
             {
                 SubnetPrefix = subnet,
+                StartIP = startIp,
+                EndIP = endIp,
                 OperationMode = isManualMode ? "api" : "hybrid",
                 // Si es manual, podríamos querer forzar una sola ejecución en el PS1
                 // Pero el PS1 actual corre una vez por defecto.

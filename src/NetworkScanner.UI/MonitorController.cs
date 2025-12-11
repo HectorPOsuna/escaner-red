@@ -28,8 +28,12 @@ namespace NetworkScanner.UI
             _isMonitoring = false;
         }
 
+        public string ApiUrl { get; set; } = "http://dsantana.fimaz.uas.edu.mx/server/api/receive.php";
+
         private async Task MonitorLoop()
         {
+            using var client = new System.Net.Http.HttpClient();
+            
             while (_isMonitoring)
             {
                 try
@@ -51,8 +55,7 @@ namespace NetworkScanner.UI
 
                     OnMetricsUpdated?.Invoke(metrics);
 
-                    // TODO: Aquí enviaríamos a la API si fuera necesario
-                    // SendMetricsToApi(metrics);
+                    await SendMetricsToApi(client, metrics);
                 }
                 catch 
                 {
@@ -60,6 +63,29 @@ namespace NetworkScanner.UI
                 }
 
                 await Task.Delay(_intervalMs);
+            }
+        }
+
+        private async Task SendMetricsToApi(System.Net.Http.HttpClient client, ClientMetrics metrics)
+        {
+            if (string.IsNullOrEmpty(ApiUrl)) return;
+
+            try
+            {
+                var payload = new
+                {
+                    type = "metrics",
+                    data = metrics
+                };
+
+                var json = JsonSerializer.Serialize(payload);
+                var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                await client.PostAsync(ApiUrl, content);
+            }
+            catch
+            {
+                // Silent fail for metrics
             }
         }
     }

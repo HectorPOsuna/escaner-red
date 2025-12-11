@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Monitor de Red</title>
+    <style>
+        :root {
+            --bg-color: #0f111a;
+            --panel-bg: #1a1c29;
+            --text-primary: #e0e6ed;
+            --accent-color: #3b82f6; /* Azul brillante */
+            --active: #10b981;
+            --danger: #ef4444;
+            --input-bg: #2d3748;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .login-container {
+            background-color: var(--panel-bg);
+            padding: 2.5rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        h1 {
+            color: var(--accent-color);
+            margin-bottom: 2rem;
+            font-size: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #9ca3af;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--input-bg);
+            border: 1px solid #4b5563;
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            box-sizing: border-box;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        #error-msg {
+            color: var(--danger);
+            margin-top: 1rem;
+            min-height: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        .footer {
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="login-container">
+        <h1>Monitor de Red</h1>
+        <form id="loginForm">
+            <div class="input-group">
+                <label for="username">Usuario</label>
+                <input type="text" id="username" name="username" placeholder="admin" required>
+            </div>
+            <div class="input-group">
+                <label for="password">Contraseña</label>
+                <input type="password" id="password" name="password" placeholder="••••••" required>
+            </div>
+            <button type="submit">Iniciar Sesión</button>
+            <div id="error-msg"></div>
+        </form>
+        <div class="footer">
+            &copy; 2025 Monitor de Seguridad
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'api/login.php'; // Ruta relativa (compatible con root webroot)
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            const errorDiv = document.getElementById('error-msg');
+
+            errorDiv.textContent = 'Autenticando...';
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: user, password: pass })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Guardar sesión simple
+                    localStorage.setItem('network_session', JSON.stringify(data.data));
+                    window.location.href = 'index.html'; // Redirigir al dashboard
+                } else {
+                    errorDiv.textContent = data.message || 'Error de login';
+                }
+            } catch (err) {
+                console.error(err);
+                errorDiv.textContent = 'Error de conexión con el servidor API';
+            }
+        });
+    </script>
+</body>
+</html>

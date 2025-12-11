@@ -7,5 +7,9 @@ namespace NetworkScanner.Shared
         public int TimeoutMinutes { get; set; } = 10;
         public string ApiUrl { get; set; } = "http://localhost/escaner-red/server/api/receive.php";
         public bool EnableDetailedLogging { get; set; } = true;
+        
+        public string SubnetPrefix { get; set; } = "192.168.1.";
+        public string StartIP { get; set; } = "";
+        public string EndIP { get; set; } = "";
     }
 }

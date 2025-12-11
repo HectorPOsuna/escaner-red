@@ -39,7 +39,9 @@ namespace NetworkScanner.Service
             _settings = settings.Value;
             _httpClientFactory = httpClientFactory;
 
-            _logDirectory = @"C:\Logs\NetworkScanner";
+            // Usar ProgramData (Standard Windows)
+            string commonData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            _logDirectory = Path.Combine(commonData, "NetworkScanner", "Logs");
             
             if (!Directory.Exists(_logDirectory))
             {
@@ -111,20 +113,46 @@ namespace NetworkScanner.Service
             
             try
             {
-                if (!File.Exists(_settings.ScriptPath))
+                string scriptPath = _settings.ScriptPath;
+                if (string.IsNullOrWhiteSpace(scriptPath))
                 {
-                    LogConTimestamp($"El script no existe: {_settings.ScriptPath}");
+                    // Default relative
+                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Agent", "NetworkScanner.ps1");
+                }
+                else if (!Path.IsPathRooted(scriptPath))
+                {
+                    // Relative explicit
+                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, scriptPath);
+                }
+
+                if (!File.Exists(scriptPath))
+                {
+                    LogConTimestamp($"El script no existe: {scriptPath}");
                     return; 
                 }
 
-                string scriptDir = Path.GetDirectoryName(_settings.ScriptPath) ?? string.Empty;
+                string scriptDir = Path.GetDirectoryName(scriptPath) ?? string.Empty;
                 string resultsFile = Path.Combine(scriptDir, "scan_results.json");
 
-                // Ejecución PowerShell con timeout
+                // Generar configuración temporal para el script
+                string configPath = Path.Combine(scriptDir, "service_config.json");
+                var dynamicConfig = new
+                {
+                    ApiUrl = _settings.ApiUrl,
+                    SubnetPrefix = _settings.SubnetPrefix,
+                    StartIP = _settings.StartIP,
+                    EndIP = _settings.EndIP,
+                    OperationMode = "hybrid",
+                    EnableProgress = false
+                };
+                
+                await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(dynamicConfig));
+
+                // Ejecución PowerShell con timeout y ConfigFile
                 var processInfo = new ProcessStartInfo
                 {
                     FileName = "powershell.exe",
-                    Arguments = $"-NonInteractive -NoProfile -ExecutionPolicy Bypass -File \"{_settings.ScriptPath}\"",
+                    Arguments = $"-NonInteractive -NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" -ConfigFile \"{configPath}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
