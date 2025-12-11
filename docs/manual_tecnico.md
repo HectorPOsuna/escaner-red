@@ -13,7 +13,7 @@ graph TD
     subgraph "Agente de Recolección (Cliente)"
         A[NetworkScanner.ps1] -->|Ping Sweep Paralelo| B(Red Local)
         A -->|Escaneo Puertos| B
-        A -->|Detección OS (TTL/WMI)| B
+        A -->|"Detección OS (TTL/WMI)"| B
         A -->|Genera JSON| C[scan_results.json]
         A -->|POST| D[API: receive.php]
     end
