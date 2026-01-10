@@ -16,9 +16,10 @@ $ConfigPath = Join-Path $ScriptRoot $ConfigFile
 # Cargar config si existe
 if (Test-Path $ConfigPath) {
     . $ConfigPath
-} else {
+}
+else {
     Write-Host "Config file not found, using defaults."
-    $ApiUrl = "http://localhost/escaner-red/server/api/receive.php"
+    $ApiUrl = "https://dsantana.fimaz.uas.edu.mx/lisi3309/server/api/receive.php"
 }
 
 # --- RECOLECCIÓN DE DATOS ---
@@ -41,7 +42,8 @@ if ($ActiveInterface) {
     $MacAddress = $ActiveInterface.MacAddress -replace "-", ":"
     $IPConfig = Get-NetIPAddress -InterfaceIndex $ActiveInterface.InterfaceIndex -AddressFamily IPv4
     $IPAddress = $IPConfig.IPAddress
-} else {
+}
+else {
     # Fallback
     $IPAddress = "127.0.0.1"
     $MacAddress = $null
@@ -55,10 +57,10 @@ $DetectedPorts = @{}
 
 # Mapeo básico de protocolos comunes (similar al script original pero simplificado)
 $CommonProtocols = @{
-    21="FTP"; 22="SSH"; 23="Telnet"; 25="SMTP"; 53="DNS"; 80="HTTP"; 
-    110="POP3"; 135="RPC"; 139="NetBIOS"; 143="IMAP"; 443="HTTPS"; 
-    445="SMB"; 1433="MSSQL"; 3306="MySQL"; 3389="RDP"; 5432="PostgreSQL";
-    8080="HTTP-Proxy"; 8443="HTTPS-Alt"
+    21 = "FTP"; 22 = "SSH"; 23 = "Telnet"; 25 = "SMTP"; 53 = "DNS"; 80 = "HTTP"; 
+    110 = "POP3"; 135 = "RPC"; 139 = "NetBIOS"; 143 = "IMAP"; 443 = "HTTPS"; 
+    445 = "SMB"; 1433 = "MSSQL"; 3306 = "MySQL"; 3389 = "RDP"; 5432 = "PostgreSQL";
+    8080 = "HTTP-Proxy"; 8443 = "HTTPS-Alt"
 }
 
 # Obtener TCP Listening
@@ -93,13 +95,13 @@ Write-Host "Puertos detectados: $($OpenPorts.Count)"
 $Payload = @{
     Devices = @(
         @{
-            Hostname = $Hostname
-            IP = $IPAddress
-            MAC = $MacAddress
-            OS = $OSName # Detección precisa local
+            Hostname  = $Hostname
+            IP        = $IPAddress
+            MAC       = $MacAddress
+            OS        = $OSName # Detección precisa local
             OS_Simple = "Windows"
-            TTL = 128
-            OS_Hints = "LocalAgent"
+            TTL       = 128
+            OS_Hints  = "LocalAgent"
             OpenPorts = $OpenPorts
         }
     )
@@ -117,7 +119,8 @@ try {
     
     # Guardar resultado localmente para debug
     $JsonPayload | Out-File (Join-Path $ScriptRoot "scan_results.json") -Encoding utf8
-} catch {
+}
+catch {
     Write-Host "Error enviando datos: $_" -ForegroundColor Red
     # Guardar error log
     "$(Get-Date) - Error: $_" | Out-File (Join-Path $ScriptRoot "error.log") -Append
