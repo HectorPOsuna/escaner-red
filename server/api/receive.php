@@ -594,6 +594,9 @@ class Processor {
             }
         }
         
+        // GESTIÓN DE HISTORIAL DE PUERTOS (SESIONES START/END)
+        $this->managePortHistory($equipoId, $openPorts);
+        
         return $equipoId;
         
     } catch (PDOException $e) {
@@ -601,6 +604,8 @@ class Processor {
         if (strpos($e->getMessage(), 'chk_equipos_mac_length') !== false && $mac) {
             writeLog("Error de constraint MAC para $ip, intentando con MAC nula", 'WARNING');
             $equipoId = $this->upsertEquipo($hostname, $ip, null, $soId, $fabricanteId);
+            // Reintentar historial
+            $this->managePortHistory($equipoId, $openPorts);
             return $equipoId;
         } else {
             throw $e;
@@ -730,7 +735,11 @@ class Processor {
                     return $rec['id_equipo'];
                 }
                 throw $e;
-                private function createAuditLog($equipoId, $mensaje) {
+            }
+        }
+    }
+
+    private function createAuditLog($equipoId, $mensaje) {
         try {
             $sql = "INSERT INTO logs (id_equipo, mensaje, nivel, fecha_hora) VALUES (?, ?, 'info', NOW())";
             $stmt = $this->pdo->prepare($sql);
@@ -738,9 +747,6 @@ class Processor {
         } catch (Exception $e) {
             // Silently fail logging to not disrupt main flow
             writeLog("Error writing audit log: " . $e->getMessage(), 'ERROR');
-        }
-    }
-}
         }
     }
 
@@ -764,6 +770,47 @@ class Processor {
                 ON DUPLICATE KEY UPDATE fecha_hora = NOW()";
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute([$equipoId, $protoId, $port]);
+    }
+    private function managePortHistory($equipoId, $currentPortsRaw) {
+        // 1. Obtener puertos abiertos actuales de este escaneo
+        $currentPortsMap = []; // Puerto -> ProtocolID
+        
+        foreach ($currentPortsRaw as $p) {
+            $portNum = is_array($p) ? $p['port'] : intval($p);
+            $protoName = is_array($p) ? ($p['protocol'] ?? 'Unknown') : 'Unknown';
+            
+            // Re-obtener ID
+            $protoId = $this->getOrCreateProtocolo($portNum, $protoName);
+            if ($protoId) {
+                $currentPortsMap[$portNum] = $protoId;
+            }
+        }
+        
+        // 2. Obtener sesiones activas en BD (fecha_fin IS NULL)
+        $activeSessions = []; // Puerto -> ID_Historial
+        $stmt = $this->pdo->prepare("SELECT id_historial, puerto FROM historial_puertos WHERE id_equipo = ? AND fecha_fin IS NULL");
+        $stmt->execute([$equipoId]);
+        while ($row = $stmt->fetch()) {
+            $activeSessions[$row['puerto']] = $row['id_historial'];
+        }
+        
+        // 3. Detectar Cierres (Estaban activos, ya no están)
+        foreach ($activeSessions as $port => $histId) {
+            if (!isset($currentPortsMap[$port])) {
+                // Cerrar sesión
+                $upd = $this->pdo->prepare("UPDATE historial_puertos SET fecha_fin = NOW() WHERE id_historial = ?");
+                $upd->execute([$histId]);
+            }
+        }
+        
+        // 4. Detectar Aperturas (Están en escaneo, no estaban activos)
+        foreach ($currentPortsMap as $port => $protoId) {
+            if (!isset($activeSessions[$port])) {
+                // Abrir nueva sesión
+                $ins = $this->pdo->prepare("INSERT INTO historial_puertos (id_equipo, id_protocolo, puerto, fecha_inicio) VALUES (?, ?, ?, NOW())");
+                $ins->execute([$equipoId, $protoId, $port]);
+            }
+        }
     }
 }
 
