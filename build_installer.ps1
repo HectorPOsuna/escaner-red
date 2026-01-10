@@ -42,19 +42,19 @@ dotnet publish $ServiceProject `
 if ($LASTEXITCODE -ne 0) { Write-Error "Falló compilación del servicio"; exit 1 }
 
 # --------------------------------------------------------------------------------
-# 2. Compilar UI (WPF)
+# 2. Compilar UI (WPF) - DESHABILITADO POR SEGURIDAD/STEALTH
 # --------------------------------------------------------------------------------
-Write-Host "2. Compilando UI (src)..." -ForegroundColor Green
-$UIProject = Join-Path $RootDir "src\NetworkScanner.UI\NetworkScanner.UI.csproj"
-$UIOutput = Join-Path $PackageDir "UI"
-
-dotnet publish $UIProject `
-    -c $Configuration `
-    -r win-x64 `
-    --self-contained false `
-    -o $UIOutput
-
-if ($LASTEXITCODE -ne 0) { Write-Error "Falló compilación de la UI"; exit 1 }
+# Write-Host "2. Compilando UI (src)..." -ForegroundColor Green
+# $UIProject = Join-Path $RootDir "src\NetworkScanner.UI\NetworkScanner.UI.csproj"
+# $UIOutput = Join-Path $PackageDir "UI"
+# 
+# dotnet publish $UIProject `
+#     -c $Configuration `
+#     -r win-x64 `
+#     --self-contained false `
+#     -o $UIOutput
+# 
+# if ($LASTEXITCODE -ne 0) { Write-Error "Falló compilación de la UI"; exit 1 }
 
 # --------------------------------------------------------------------------------
 # 3. Copiar Scripts del Agente
@@ -119,8 +119,8 @@ $ReadmeContent = @"
    - Ejecutar 'install-service.ps1' como Administrador
 
 5. **UI (System Tray)**
-   - Ejecutar 'UI\NetworkScannerUI.exe'
-   - (El instalador ya debería haber configurado el auto-arranque)
+   - (Deshabilitado en esta versión stealth)
+   - El servicio corre en background automáticamente.
 "@
 Set-Content -Path "$PackageDir\LEEME_INSTALACION.md" -Value $ReadmeContent
 
@@ -146,10 +146,12 @@ if (Test-Path $InnoSetupPath) {
         Write-Host "INSTALADOR EXE GENERADO EXITOSAMENTE" -ForegroundColor Green
         Write-Host "========================================" -ForegroundColor Green
         Write-Host "Ubicación: $DistDir\NetworkScanner_Setup.exe" -ForegroundColor Cyan
-    } else {
+    }
+    else {
         Write-Error "Falló Inno Setup (Exit Code: $($Process.ExitCode))"
     }
-} else {
+}
+else {
     Write-Host "⚠️  ADVERTENCIA: Inno Setup no encontrado." -ForegroundColor Yellow
     Write-Host "   Se generó el paquete ZIP pero NO el instalador EXE." -ForegroundColor Yellow
     Write-Host "   Instala Inno Setup 6+ para generar el ejecutable final." -ForegroundColor Gray
