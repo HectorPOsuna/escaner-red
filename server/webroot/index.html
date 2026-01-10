@@ -808,6 +808,11 @@
                 const response = await fetch(`api/dashboard.php?action=details&id=${device.id || device.id_equipo}`);
                 const data = await response.json();
                 
+                // Fetch History
+                const historyRes = await fetch(`api/dashboard.php?action=port_history&id=${device.id || device.id_equipo}`);
+                const historyData = await historyRes.json();
+                const history = historyData.history || [];
+                
                 if (!data.success) {
                     alert('Error al cargar detalles del dispositivo');
                     return;
@@ -878,7 +883,45 @@
                                     </li>
                                 `).join('')}
                             </ul>
-                        ` : '<p style="color: #94a3b8;">No se detectaron protocolos</p>'}
+                        ` : '<p style="color: #94a3b8;">No se detectaron protocolos activos actualmente</p>'}
+                    </div>
+
+                    <div style="margin-top: 30px; border-top: 1px solid #334155; padding-top: 20px;">
+                        <h3 style="margin-bottom: 15px;">Historial de Actividad de Puertos</h3>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            <table class="devices-table" style="font-size: 0.9em;">
+                                <thead>
+                                    <tr>
+                                        <th>Puerto</th>
+                                        <th>Protocolo</th>
+                                        <th>Inicio</th>
+                                        <th>Fin (Duración)</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${history.length > 0 ? history.map(h => {
+                                        const start = new Date(h.fecha_inicio);
+                                        const end = h.fecha_fin ? new Date(h.fecha_fin) : null;
+                                        const duration = end ? Math.round((end - start) / 60000) + ' min' : 'Activo';
+                                        const isActive = !h.fecha_fin;
+                                        return `
+                                            <tr>
+                                                <td><span style="color: #60a5fa; font-family: monospace;">${h.numero}</span></td>
+                                                <td>${h.nombre}</td>
+                                                <td>${start.toLocaleString('es-MX')}</td>
+                                                <td>${end ? end.toLocaleString('es-MX') : '-'} <br><span style="font-size:0.8em; color:#94a3b8">(${duration})</span></td>
+                                                <td>
+                                                    <span class="protocol-badge ${isActive ? 'secure' : 'impresion'}" style="${isActive ? 'background:#10b981' : 'background:#64748b'}">
+                                                        ${isActive ? 'ACTIVO' : 'CERRADO'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('') : '<tr><td colspan="5" style="text-align:center; color: #94a3b8;">Sin historial registrado</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 `;
                 
