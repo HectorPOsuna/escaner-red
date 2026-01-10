@@ -117,6 +117,81 @@ begin
   end;
 end;
 
+// Variables globales para la página personalizada
+var
+  ActionPage: TInputOptionWizardPage;
+  ActionPageID: Integer;
+
+procedure InitializeWizard;
+begin
+  // Crear página de selección después de la licencia (wpLicense)
+  ActionPage := CreateInputOptionPage(wpLicense,
+    'Selección de Acción', '¿Qué desea realizar?',
+    'Por favor seleccione la operación que desea ejecutar:',
+    True, False);
+
+  // Agregar opciones
+  ActionPage.Add('Instalar (Instalación normal)');
+  ActionPage.Add('Reparar (Reinstalar / Actualizar)');
+  ActionPage.Add('Desinstalar (Eliminar software existente)');
+
+  // Default a Instalar
+  ActionPage.SelectedValueIndex := 0;
+  
+  ActionPageID := ActionPage.ID;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  UninstallerPath: String;
+  ResultCode: Integer;
+begin
+  Result := True;
+
+  // Si estamos en nuestra página y le dan a Siguiente
+  if CurPageID = ActionPageID then
+  begin
+    // Índice 2 = Desinstalar
+    if ActionPage.SelectedValueIndex = 2 then
+    begin
+      // Buscar desinstalador en rutas comunes
+      // Nota: Inno setup guarda la ruta en HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{AppId}_is1
+      if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{{00000000-0000-0000-0000-000000000000}}_is1', 'UninstallString', UninstallerPath) then
+      begin
+        // Quitar comillas si las tiene
+        StringChange(UninstallerPath, '"', '');
+        
+        if FileExists(UninstallerPath) then
+        begin
+          if MsgBox('¿Está seguro de que desea desinstalar la aplicación?', mbConfirmation, MB_YESNO) = IDYES then
+          begin
+            // Ejecutar desinstalador silenciosamente o normal
+            Exec(UninstallerPath, '', '', SW_SHOW, ewNoWait, ResultCode);
+            // Cerrar este instalador
+            Result := False; 
+            PostMessage(WizardForm.Handle, $0010, 0, 0); // WM_CLOSE
+          end
+          else
+          begin
+            Result := False; // No avanzar
+          end;
+        end
+        else
+        begin
+          MsgBox('No se encontró el desinstalador o no existe instalación previa.', mbError, MB_OK);
+          Result := False;
+        end;
+      end
+      else
+      begin
+         MsgBox('No se encontró una instalación existente para desinstalar.', mbInformation, MB_OK);
+         Result := False;
+      end;
+    end;
+    // Indices 0 (Instalar) y 1 (Reparar) continúan normalmente
+  end;
+end;
+
 // Función para verificar si servicio existe (simple check)
 function ServiceExists: Boolean;
 var
