@@ -18,6 +18,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 
+LicenseFile=license.txt
 ; Directorio de Instalación default (Program Files)
 DefaultDirName={autopf}\NetworkScanner
 DefaultGroupName={#MyAppName}
@@ -39,6 +40,9 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "{commonappdata}\NetworkScanner\Logs"; Permissions: users-modify
 
 [Files]
+; Prerrequisitos (.NET Runtime)
+Source: "..\dist\NetworkScanner_Package\Prerequisites\dotnet-runtime-8.0-win-x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+
 ; Servicio Windows
 Source: "..\dist\NetworkScanner_Package\Service\*"; DestDir: "{app}\Service"; Flags: ignoreversion recursesubdirs createallsubdirs
 
@@ -70,6 +74,9 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"; Tasks:
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"
 
 [Run]
+; 0. Instalar .NET Runtime (Silencioso)
+Filename: "{tmp}\dotnet-runtime-8.0-win-x64.exe"; Parameters: "/install /quiet /norestart"; Flags: runhidden; StatusMsg: "Instalando dependencias necesarias (.NET 8.0)..."; Check: NeedsDotNet
+
 ; 1. Instalar Servicio (usando sc.exe)
 ; Se asegura de borrarlo primero por si existe corrupto
 Filename: "sc.exe"; Parameters: "stop NetworkScannerService"; Flags: runhidden; StatusMsg: "Deteniendo servicio anterior..."; Check: ServiceExists
@@ -93,6 +100,36 @@ Filename: "sc.exe"; Parameters: "delete NetworkScannerService"; Flags: runhidden
 Filename: "taskkill"; Parameters: "/f /im {#MyAppExeName}"; Flags: runhidden; StatusMsg: "Cerrando aplicación..."
 
 [Code]
+function NeedsDotNet: Boolean;
+var
+  RegKey: String;
+begin
+  // Chequear registro para .NET 8.0 (x64)
+  RegKey := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.NETCore.App\8.0.0';
+  // Nota: Esto es un check básico. La versión específica puede variar (8.0.x).
+  // Una forma más segura es intentar ejecutarlo o usar RegKeyExists parcial si fuera posible,
+  // pero Inno Setup no tiene wildcards nativos fáciles en RegKeyExists.
+  // Sin embargo, el instalador de .NET maneja bien si ya está instalado.
+  // Dejaremos que corra si no estamos seguros, pero intentamos detectar la base.
+  
+  if RegKeyExists(HKLM, 'SOFTWARE\ODBC\ODBC.INI\ODBC Data Sources') then
+  begin 
+      // Dummy check
+  end;
+
+  // Verificamos si existe la carpeta de Shared Framework como proxy rapido
+  if DirExists(ExpandConstant('{pf64}\dotnet\shared\Microsoft.NETCore.App\8.0.0')) or 
+     DirExists(ExpandConstant('{pf64}\dotnet\shared\Microsoft.NETCore.App\8.0.1')) or
+     DirExists(ExpandConstant('{pf64}\dotnet\shared\Microsoft.NETCore.App\8.0.2')) then
+  begin
+    Result := False;
+  end
+  else
+  begin
+    Result := True;
+  end;
+end;
+
 // Función para verificar si servicio existe (simple check)
 function ServiceExists: Boolean;
 var
