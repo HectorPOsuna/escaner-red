@@ -1,0 +1,13 @@
+TERMINOS Y CONDICIONES DE USO
+
+1. LICENCIA DE USO
+Este software es proporcionado "tal cual", sin garantía de ningún tipo, expresa o implícita.
+
+2. EXENCIÓN DE RESPONSABILIDAD LEGAL
+En materia legal se exenta de toda culpa en caso de no haber sido descargado en el siguiente sitio: "https://github.com/HectorPOsuna/escaner-red" o en su respectiva pagina web de monitoreo.
+
+3. INSTALACIÓN DE COMPONENTES
+Al continuar con la instalación, usted acepta que este software instale las correspondencias necesarias para poder continuar con la ejecución del programa y su correcto funcionamiento en materia legal.
+
+4. DERECHOS DE AUTOR
+Todos los derechos reservados.
