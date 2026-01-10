@@ -47,31 +47,18 @@ Source: "..\dist\NetworkScanner_Package\Prerequisites\dotnet-runtime-8.0-win-x64
 Source: "..\dist\NetworkScanner_Package\Service\*"; DestDir: "{app}\Service"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Interfaz UI
-Source: "..\dist\NetworkScanner_Package\UI\*"; DestDir: "{app}\UI"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; Agente PowerShell
-Source: "..\dist\NetworkScanner_Package\Agent\*"; DestDir: "{app}\Agent"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; Backend y DB (Como referencia/tools)
-Source: "..\dist\NetworkScanner_Package\Server\*"; DestDir: "{app}\Server"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\dist\NetworkScanner_Package\Database\*"; DestDir: "{app}\Database"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; Readme
-Source: "..\dist\NetworkScanner_Package\LEEME_INSTALACION.md"; DestDir: "{app}"; Flags: isreadme
-
-[Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; Source: "..\dist\NetworkScanner_Package\UI\*"; DestDir: "{app}\UI"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; Acceso directo en Menú Inicio
-Name: "{group}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"
+; Name: "{group}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"
 Name: "{group}\Ver Logs"; Filename: "{commonappdata}\NetworkScanner\Logs"
 
 ; Acceso directo en Escritorio
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"; Tasks: desktopicon
+; Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"; Tasks: desktopicon
 
 ; Acceso directo en Startup (para la UI)
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"
+; Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"
 
 [Run]
 ; 0. Instalar .NET Runtime (Silencioso)
@@ -91,7 +78,7 @@ Filename: "sc.exe"; Parameters: "failure NetworkScannerService reset= 86400 acti
 Filename: "sc.exe"; Parameters: "start NetworkScannerService"; Flags: runhidden; StatusMsg: "Iniciando servicio..."
 
 ; 3. Iniciar UI
-Filename: "{app}\UI\{#MyAppExeName}"; Description: "Iniciar aplicación de bandeja"; Flags: nowait postinstall skipifsilent
+; Filename: "{app}\UI\{#MyAppExeName}"; Description: "Iniciar aplicación de bandeja"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; 1. Detener e iniciar borrado del servicio
