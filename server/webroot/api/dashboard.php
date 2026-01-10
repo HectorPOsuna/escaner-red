@@ -122,6 +122,23 @@ try {
             sendJson(true, ['device' => $device, 'ports' => $ports]);
             break;
 
+        case 'port_history': // Historial de puertos (Timeline)
+            $id = $_GET['id'] ?? 0;
+            if (!$id) sendJson(false, [], 'ID requerido');
+
+            $sql = "SELECT p.nombre, p.numero, p.categoria, hp.puerto, hp.fecha_inicio, hp.fecha_fin
+                    FROM historial_puertos hp
+                    JOIN protocolos p ON hp.id_protocolo = p.id_protocolo
+                    WHERE hp.id_equipo = ?
+                    ORDER BY hp.fecha_inicio DESC";
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$id]);
+            $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            sendJson(true, ['history' => $history]);
+            break;
+
         case 'protocol_details': // Detalles de protocolos por categoría (Lista simple)
             $cat = $_GET['categoria'] ?? '';
             if (!$cat) sendJson(false, [], 'Categoría requerida');
