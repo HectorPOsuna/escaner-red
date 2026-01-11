@@ -765,11 +765,26 @@ class Processor {
 
     private function linkProtocolo($equipoId, $protoId, $port) {
         if (!$protoId) return;
+        
+        // El problema de ON DUPLICATE KEY UPDATE es que requiere un INDEX UNIQUE en las columnas de la clave
+        // Intentamos primero el INSERT con estado activo y actualización de fecha
         $sql = "INSERT INTO protocolos_usados (id_equipo, id_protocolo, puerto_detectado, fecha_hora, estado) 
                 VALUES (?, ?, ?, NOW(), 'activo') 
-                ON DUPLICATE KEY UPDATE fecha_hora = NOW()";
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([$equipoId, $protoId, $port]);
+                ON DUPLICATE KEY UPDATE fecha_hora = NOW(), estado = 'activo'";
+        
+        try {
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute([$equipoId, $protoId, $port]);
+        } catch (PDOException $e) {
+            // Si falla por falta de índice único compuesto en la DB, lo manejamos manualmente
+            $existing = $this->fetchOne("SELECT id_uso FROM protocolos_usados WHERE id_equipo = ? AND id_protocolo = ? AND puerto_detectado = ?", [$equipoId, $protoId, $port]);
+            if ($existing) {
+                $upd = $this->pdo->prepare("UPDATE protocolos_usados SET fecha_hora = NOW(), estado = 'activo' WHERE id_uso = ?");
+                $upd->execute([$existing['id_uso']]);
+            } else {
+                writeLog("Error vinculando protocolo: " . $e->getMessage(), 'ERROR');
+            }
+        }
     }
     private function managePortHistory($equipoId, $currentPortsRaw) {
         // 1. Obtener puertos abiertos actuales de este escaneo
@@ -787,28 +802,40 @@ class Processor {
         }
         
         // 2. Obtener sesiones activas en BD (fecha_fin IS NULL)
-        $activeSessions = []; // Puerto -> ID_Historial
-        $stmt = $this->pdo->prepare("SELECT id_historial, puerto FROM historial_puertos WHERE id_equipo = ? AND fecha_fin IS NULL");
+        $activeSessions = []; // Puerto -> [id_historial, id_protocolo]
+        $stmt = $this->pdo->prepare("SELECT id_historial, id_protocolo, puerto FROM historial_puertos WHERE id_equipo = ? AND fecha_fin IS NULL");
         $stmt->execute([$equipoId]);
         while ($row = $stmt->fetch()) {
-            $activeSessions[$row['puerto']] = $row['id_historial'];
+            $activeSessions[$row['puerto']] = [
+                'id_historial' => $row['id_historial'],
+                'id_protocolo' => $row['id_protocolo']
+            ];
         }
         
         // 3. Detectar Cierres (Estaban activos, ya no están)
-        foreach ($activeSessions as $port => $histId) {
+        foreach ($activeSessions as $port => $data) {
             if (!isset($currentPortsMap[$port])) {
-                // Cerrar sesión
+                // Cerrar sesión en historial
                 $upd = $this->pdo->prepare("UPDATE historial_puertos SET fecha_fin = NOW() WHERE id_historial = ?");
-                $upd->execute([$histId]);
+                $upd->execute([$data['id_historial']]);
+
+                // Actualizar estado a 'inactivo' en protocolos_usados
+                $updProto = $this->pdo->prepare("UPDATE protocolos_usados SET estado = 'inactivo' WHERE id_equipo = ? AND id_protocolo = ? AND puerto_detectado = ?");
+                $updProto->execute([$equipoId, $data['id_protocolo'], $port]);
+                
+                writeLog("Puerto $port detectado como INACTIVO en equipo ID $equipoId", 'INFO');
             }
         }
         
         // 4. Detectar Aperturas (Están en escaneo, no estaban activos)
         foreach ($currentPortsMap as $port => $protoId) {
             if (!isset($activeSessions[$port])) {
-                // Abrir nueva sesión
+                // Abrir nueva sesión en historial
                 $ins = $this->pdo->prepare("INSERT INTO historial_puertos (id_equipo, id_protocolo, puerto, fecha_inicio) VALUES (?, ?, ?, NOW())");
                 $ins->execute([$equipoId, $protoId, $port]);
+
+                // El estado en protocolos_usados ya se pone como 'activo' en linkProtocolo(), que se llama antes de managePortHistory
+                writeLog("Puerto $port detectado como ACTIVO en equipo ID $equipoId", 'INFO');
             }
         }
     }
