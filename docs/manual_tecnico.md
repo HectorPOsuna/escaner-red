@@ -30,14 +30,14 @@ graph TD
     subgraph "Cliente (Endpoint Windows)"
         A[Windows Service Runner] -->|Start| B[ScannerWorker]
         B -->|Invoca| C[LocalHost Scanner]
-        C -->|Consulta| D[OS APIs / Registry]
+        C -->|Consulta| D["OS APIs / Registry"]
         C -->|Consulta| E[Network Stack]
         C -->|Genera| F[In-Memory History]
     end
 
     subgraph "Servidor (Infraestructura)"
-        G[API Gateway (PHP)] -->|Valida & Procesa| H[Logic Processor]
-        H -->|Upsert| I[(MySQL Database)]
+        G["API Gateway (PHP)"] -->|Valida & Procesa| H[Logic Processor]
+        H -->|Upsert| I[("MySQL Database")]
     end
 
     B -->|HTTP POST JSON| G
