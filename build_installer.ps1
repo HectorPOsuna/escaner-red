@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Network Scanner - Build & Package Script" -ForegroundColor Cyan
+Write-Host "Client System Agent - Build & Package Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -170,7 +170,7 @@ if (Test-Path $InnoSetupPath) {
         Write-Host "========================================" -ForegroundColor Green
         Write-Host "INSTALADOR EXE GENERADO EXITOSAMENTE" -ForegroundColor Green
         Write-Host "========================================" -ForegroundColor Green
-        Write-Host "Ubicación: $DistDir\NetworkScanner_Setup.exe" -ForegroundColor Cyan
+        Write-Host "Ubicación: $DistDir\ClientAgent_Setup.exe" -ForegroundColor Cyan
     }
     else {
         Write-Error "Falló Inno Setup (Exit Code: $($Process.ExitCode))"
