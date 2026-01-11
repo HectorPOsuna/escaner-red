@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS protocolos_usados (
     fecha_hora DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Momento exacto de la detección',
     estado ENUM('activo', 'inactivo') DEFAULT 'activo' NOT NULL COMMENT 'Estado del servicio detectado',
     puerto_detectado INT NOT NULL COMMENT 'Puerto real donde se detectó el servicio',
+    UNIQUE KEY uk_uso_unico (id_equipo, id_protocolo, puerto_detectado),
     CONSTRAINT fk_uso_equipo FOREIGN KEY (id_equipo) REFERENCES equipos(id_equipo) ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT fk_uso_protocolo FOREIGN KEY (id_protocolo) REFERENCES protocolos(id_protocolo) ON DELETE CASCADE ON UPDATE CASCADE,
     INDEX idx_uso_equipo (id_equipo),
