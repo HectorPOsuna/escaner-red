@@ -9,7 +9,7 @@ namespace NetworkScanner.Service
 {
     public class Program
     {
-        private const string EventSourceName = "NetworkScannerService";
+        private const string EventSourceName = "ClientSystemAgentService";
         private const string EventLogName = "Application";
 
         public static void Main(string[] args)

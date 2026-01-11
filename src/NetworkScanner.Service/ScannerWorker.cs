@@ -54,7 +54,7 @@ namespace NetworkScanner.Service
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            LogConTimestamp($"Servicio Iniciado. Intervalo: {_settings.IntervalMinutes} min. Script: {_settings.ScriptPath}");
+            LogConTimestamp($"Servicio Iniciado. Intervalo: {_settings.IntervalMinutes} min. Escaneo local activo.");
             _logger.LogInformation("NetworkScannerService iniciado.");
             LogToEventViewer("Servicio iniciado correctamente", EventLogEntryType.Information);
 
@@ -109,120 +109,54 @@ namespace NetworkScanner.Service
 
         private async Task EjecutarCicloEscaneo(CancellationToken stoppingToken)
         {
-            LogConTimestamp("--- Iniciando ciclo de escaneo ---");
+            LogConTimestamp("--- Iniciando ciclo de escaneo local (Automático) ---");
             
             try
             {
-                string scriptPath = _settings.ScriptPath;
-                if (string.IsNullOrWhiteSpace(scriptPath))
-                {
-                    // Default relative
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Agent", "NetworkScanner.ps1");
-                }
-                else if (!Path.IsPathRooted(scriptPath))
-                {
-                    // Relative explicit
-                    scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, scriptPath);
-                }
-
-                if (!File.Exists(scriptPath))
-                {
-                    LogConTimestamp($"El script no existe: {scriptPath}");
-                    return; 
-                }
-
-                string scriptDir = Path.GetDirectoryName(scriptPath) ?? string.Empty;
-                string resultsFile = Path.Combine(scriptDir, "scan_results.json");
-
-                // Generar configuración temporal para el script
-                string configPath = Path.Combine(scriptDir, "service_config.json");
-                var dynamicConfig = new
-                {
-                    ApiUrl = _settings.ApiUrl,
-                    SubnetPrefix = _settings.SubnetPrefix,
-                    StartIP = _settings.StartIP,
-                    EndIP = _settings.EndIP,
-                    OperationMode = "hybrid",
-                    EnableProgress = false
-                };
+                var scanner = new LocalHostScanner();
+                var results = await scanner.ScanAsync();
                 
-                await File.WriteAllTextAsync(configPath, JsonSerializer.Serialize(dynamicConfig));
+                // Formatear para compatibilidad con el backend ( legacy format 'Devices' array )
+                // El backend espera: { "Devices": [ { "IP": "...", "MAC": "...", "Hostname": "...", "OS": "...", "OpenPorts": [...] } ] }
+                
+                var primaryInterface = results.network_interfaces.FirstOrDefault(ni => ni.is_primary) 
+                                      ?? results.network_interfaces.FirstOrDefault(ni => ni.ip_address != "N/A" && ni.ip_address != "127.0.0.1");
 
-                // Ejecución PowerShell con timeout y ConfigFile
-                var processInfo = new ProcessStartInfo
+                var legacyPayload = new
                 {
-                    FileName = "powershell.exe",
-                    Arguments = $"-NonInteractive -NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" -ConfigFile \"{configPath}\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                    WorkingDirectory = scriptDir
+                    Devices = new[]
+                    {
+                        new
+                        {
+                            IP = primaryInterface?.ip_address ?? "127.0.0.1",
+                            MAC = primaryInterface?.mac_address ?? "",
+                            Hostname = results.host_info.hostname,
+                            OS = results.host_info.os_name,
+                            OS_Simple = "Windows",
+                            TTL = 128,
+                            OS_Hints = results.host_info.os_version,
+                            Manufacturer = results.host_info.manufacturer,
+                            OpenPorts = results.ports_snapshot.Select(p => new { 
+                                port = p.port, 
+                                protocol = p.type // Enviamos el tipo (TCP/UDP) como protocolo para el backend
+                            }).ToArray()
+                        }
+                    }
                 };
 
-                using (var process = new Process { StartInfo = processInfo })
+                string json = JsonSerializer.Serialize(legacyPayload, new JsonSerializerOptions { WriteIndented = true });
+                
+                if (_settings.EnableDetailedLogging)
                 {
-                    var output = new StringBuilder();
-                    var error = new StringBuilder();
-
-                    process.OutputDataReceived += (s, e) => { if (e.Data != null) output.AppendLine(e.Data); };
-                    process.ErrorDataReceived += (s, e) => { if (e.Data != null) error.AppendLine(e.Data); };
-
-                    process.Start();
-                    process.BeginOutputReadLine();
-                    process.BeginErrorReadLine();
-
-                    var cts = new CancellationTokenSource(TimeSpan.FromMinutes(_settings.TimeoutMinutes));
-                    try
-                    {
-                        await process.WaitForExitAsync(cts.Token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        process.Kill();
-                        LogConTimestamp("Timeout excedido - Proceso PowerShell terminado.");
-                        LogToEventViewer("Script PowerShell excedió timeout y fue terminado", EventLogEntryType.Warning);
-                        throw;
-                    }
-
-                    if (process.ExitCode != 0)
-                    {
-                        LogConTimestamp($"Script finalizó con error {process.ExitCode}: {error}");
-                    }
-                    else
-                    {
-                        if (_settings.EnableDetailedLogging) LogConTimestamp("Script finalizado correctamente.");
-                    }
+                    LogConTimestamp($"Escaneo completado. Puertos abiertos detectados: {results.ports_snapshot.Count}");
                 }
 
-                // Procesamiento JSON
-                if (File.Exists(resultsFile))
-                {
-                    string json = await File.ReadAllTextAsync(resultsFile, stoppingToken);
-                    
-                    // Validar JSON
-                    try
-                    {
-                        using (JsonDocument.Parse(json)) { }
-                    }
-                    catch (JsonException ex)
-                    {
-                        LogConTimestamp($"JSON inválido: {ex.Message}");
-                        return;
-                    }
-                    
-                    await EnviarResultadosApi(json, stoppingToken);
-                }
-                else
-                {
-                    LogConTimestamp("No se generó scan_results.json");
-                }
-
+                await EnviarResultadosApi(json, stoppingToken);
             }
             catch (Exception ex)
             {
-                LogConTimestamp($"Error en ciclo: {ex.Message}");
-                throw; // Re-throw para que sea manejado por ExecuteAsync
+                LogConTimestamp($"Error en ciclo de escaneo: {ex.Message}");
+                throw;
             }
         }
 
@@ -324,7 +258,6 @@ namespace NetworkScanner.Service
             try
             {
                 string entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {mensaje}";
-                if (Environment.UserInteractive) Console.WriteLine(entry);
                 
                 lock (this)
                 {
