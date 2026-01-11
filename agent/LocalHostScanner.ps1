@@ -11,7 +11,11 @@ param (
 
 # Configuración
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ConfigPath = Join-Path $ScriptRoot $ConfigFile
+if (Path.IsPathRooted($ConfigFile)) {
+    $ConfigPath = $ConfigFile
+} else {
+    $ConfigPath = Join-Path $ScriptRoot $ConfigFile
+}
 
 # Cargar config si existe
 if (Test-Path $ConfigPath) {
@@ -101,7 +105,7 @@ $Payload = @{
             OS        = $OSName # Detección precisa local
             OS_Simple = "Windows"
             TTL       = 128
-            OS_Hints  = "LocalAgent"
+            OS_Hints  = "ClientAgent"
             OpenPorts = $OpenPorts
         }
     )

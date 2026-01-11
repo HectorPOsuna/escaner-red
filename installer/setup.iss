@@ -1,7 +1,7 @@
 ; Script de Inno Setup para Network Scanner
 ; Genera un instalador único .exe que incluye Servicio, UI, Agente y Herramientas
 
-#define MyAppName "Network Scanner Agent"
+#define MyAppName "Client System Agent"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "TuEmpresa"
 #define MyAppURL "http://www.tuempresa.com/"
@@ -20,12 +20,12 @@ AppUpdatesURL={#MyAppURL}
 
 LicenseFile=license.txt
 ; Directorio de Instalación default (Program Files)
-DefaultDirName={autopf}\NetworkScanner
+DefaultDirName={autopf}\ClientSystemAgent
 DefaultGroupName={#MyAppName}
 
 ; Opciones
 DisableProgramGroupPage=yes
-OutputBaseFilename=NetworkScanner_Setup
+OutputBaseFilename=ClientAgent_Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -37,7 +37,7 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Dirs]
 ; Crear directorio de logs en ProgramData con permisos full para Todos (o Users)
-Name: "{commonappdata}\NetworkScanner\Logs"; Permissions: users-modify
+Name: "{commonappdata}\ClientSystemAgent\Logs"; Permissions: users-modify
 
 [Files]
 ; Prerrequisitos (.NET Runtime)
@@ -52,7 +52,7 @@ Source: "..\dist\NetworkScanner_Package\Service\*"; DestDir: "{app}\Service"; Fl
 [Icons]
 ; Acceso directo en Menú Inicio
 ; Name: "{group}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"
-Name: "{group}\Ver Logs"; Filename: "{commonappdata}\NetworkScanner\Logs"
+Name: "{group}\Ver Logs"; Filename: "{commonappdata}\ClientSystemAgent\Logs"
 
 ; Acceso directo en Escritorio
 ; Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\UI\{#MyAppExeName}"; Tasks: desktopicon
@@ -70,8 +70,8 @@ Filename: "sc.exe"; Parameters: "stop NetworkScannerService"; Flags: runhidden; 
 Filename: "sc.exe"; Parameters: "delete NetworkScannerService"; Flags: runhidden; StatusMsg: "Eliminando servicio anterior..."; Check: ServiceExists
 
 ; Crear el servicio. binPath debe apuntar al exe. start= auto.
-Filename: "sc.exe"; Parameters: "create NetworkScannerService binPath= ""{app}\Service\{#MyServiceExeName}"" start= auto DisplayName= ""Network Scanner Service"""; Flags: runhidden; StatusMsg: "Registrando servicio..."
-Filename: "sc.exe"; Parameters: "description NetworkScannerService ""Agente de monitoreo de red y detección de conflictos"""; Flags: runhidden
+Filename: "sc.exe"; Parameters: "create NetworkScannerService binPath= ""{app}\Service\{#MyServiceExeName}"" start= auto DisplayName= ""Client System Agent"""; Flags: runhidden; StatusMsg: "Registrando servicio..."
+Filename: "sc.exe"; Parameters: "description NetworkScannerService ""Monitor de sistema y estado del cliente (Embedded)"""; Flags: runhidden
 Filename: "sc.exe"; Parameters: "failure NetworkScannerService reset= 86400 actions= restart/60000/restart/60000/restart/60000"; Flags: runhidden; StatusMsg: "Configurando recuperación..."
 
 ; 2. Iniciar Servicio
