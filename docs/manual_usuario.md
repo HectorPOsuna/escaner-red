@@ -1,74 +1,116 @@
-# Manual de Usuario - Escáner de Red
+# Manual de Usuario - Client System Agent
 
-## Introducción
-Bienvenido al sistema de **Monitor de Actividad de Protocolos de Red**. Este manual te guiará en el uso del Panel de Control (Dashboard) y la aplicación de monitoreo en segundo plano.
-
----
-
-## 1. Aplicación de Bandeja (System Tray App)
-
-El sistema cuenta con un "Agente" silencioso que se ejecuta en tu computadora para escanear la red. Lo verás como un icono en la barra de tareas (cerca del reloj).
-
-### Estados del Icono
-*   🟢 **Verde (Activo)**: El servicio está corriendo y escaneando la red periódicamente.
-*   🔴 **Rojo (Detenido)**: El servicio está pausado. No se están actualizando datos.
-*   🟡 **Amarillo (Alerta)**: Se ha detectado un error o advertencia en el último escaneo.
-
-### Acciones del Menú Contextual
-Al dar clic derecho sobre el icono podrás:
-
-1.  **Iniciar Servicio**: Reactiva el escaneo automático.
-2.  **Detener Servicio**: Pausa temporalmente el escaneo.
-3.  **Ver Logs**: Abre una ventana con el registro detallado de actividades (útil si hay problemas).
-4.  **Abrir Dashboard**: Lanza el panel web en tu navegador predeterminado.
-5.  **Salir**: Cierra completamente la aplicación (dejará de escanear).
+**Bienvenido** al manual de usuario del **Client System Agent** (Agente de Sistema Cliente).
+Esta guía le ayudará a entender qué es este programa, cómo instalarlo y cómo funciona en su computadora.
 
 ---
 
-## 2. Panel de Control Web (Dashboard)
+## 1. ¿Qué es este programa?
 
-El Dashboard es donde puedes ver todos los dispositivos conectados a tu red. Se accede típicamente vía `http://localhost/escaner-red` (o la dirección que te haya dado el administrador).
+El **Client System Agent** es una pequeña herramienta de diagnóstico y seguridad diseñada para instituciones y redes corporativas.
 
-### 2.1 Vista Principal (Resumen)
+Su función principal es realizar un "chequeo de salud" automático de su computadora. Imagine que es como un médico que visita su PC periódicamente para revisar:
+*   Quién es (Nombre del equipo y modelo).
+*   Dónde está (Dirección IP en la red).
+*   Qué "puertas" están abiertas (Puertos de comunicación).
 
-En la parte superior encontrarás métricas clave:
-*   **Total Dispositivos**: Número de equipos únicos vistos en la red.
-*   **Conflictos Activos**: Alerta roja si hay direcciones IP duplicadas.
-*   **Protocolos Inseguros**: Conteo de puertos abiertos que representan riesgo (ej. Telnet, FTP).
-
-### 2.2 Lista de Dispositivos
-
-La tabla principal muestra cada equipo encontrado:
-
-*   **Estado**:
-    *   🟢 Online (Visto hace menos de 10 minutos).
-    *   ⚪ Offline.
-*   **Hostname**: Nombre del equipo.
-*   **IP / MAC**: Identificadores de red.
-*   **Fabricante**: Marca del dispositivo (ej. Apple, Dell, Intel), detectada automáticamente.
-*   **Sistema Operativo**: El sistema intenta adivinar si es Windows, Linux, Impresora, etc.
-*   **Puertos/Servicios**: Iconos que indican qué tiene abierto ese equipo:
-    *   🌐 Web (HTTP/HTTPS)
-    *   📁 Archivos (SMB/FTP)
-    *   💻 Remoto (RDP/SSH)
-    *   🖨️ Impresora
-
-### 2.3 Gestión de Conflictos
-
-Si el sistema detecta que dos equipos usan la misma IP:
-1.  Aparecerá una alerta en la sección **Conflictos**.
-2.  Verás la IP afectada y las dos direcciones MAC que compiten por ella.
-3.  **Acción Recomendada**: Verificar esos dos equipos físicamente o revisar la configuración DHCP de tu router.
+Esta información ayuda a los administradores de red a mantener el inventario actualizado y detectar problemas de seguridad antes de que se conviertan en amenazas.
 
 ---
 
-## 3. Preguntas Frecuentes (FAQ)
+## 2. Requisitos del Sistema
 
-**P: ¿Por qué dice "Sistema Operativo: Desconocido"?**
-R: Algunos dispositivos tienen firewall activado y no responden al escaneo profundo. El sistema necesita al menos un puerto abierto o respuesta al ping para adivinar el SO.
+Para que el agente funcione correctamente, su equipo debe cumplir con lo siguiente:
 
-**P: ¿El escáner alenta mi internet?**
-R: No. El escaneo está diseñado para ser ligero y ocurre solo periódicamente.
+*   **Sistema Operativo:** Windows 10, Windows 11 o Windows Server.
+*   **Permisos:** Se requieren permisos de Administrador únicamente para la instalación.
+*   **Conexión:** Debe tener conexión a la red interna de la organización (Intranet).
 
-**P: ¿Cómo soluciono un conflicto de IP?**
-R: Generalmente, reiniciando los dos equipos afectados para que pidan una nueva IP al router se soluciona. Si persiste, verifica que no tengan configurada una IP fija (Estática) idéntica.
+---
+
+## 3. Instalación
+
+La instalación está diseñada para ser rápida y silenciosa, sin interrumpir su trabajo.
+
+### Pasos para instalar:
+1.  Recibirá un archivo instalador (generalmente llamado `Setup_ClientAgent.exe`).
+2.  Haga doble clic sobre el archivo.
+3.  Es posible que Windows le pida confirmación para permitir cambios en el equipo. Haga clic en **Sí** o **Aceptar**.
+4.  El instalador configurará todo automáticamente en unos segundos.
+
+**¡Listo!** No verá ventanas emergentes ni iconos en el escritorio. El agente está diseñado para trabajar "bajo el capó".
+
+---
+
+## 4. Funcionamiento General
+
+Una vez instalado, el agente funciona de manera **automática** y **transparente**.
+
+*   **Inicio Automático:** El programa se enciende solo cuando usted prende su computadora.
+*   **Segundo Plano:** Trabaja en segundo plano sin mostrar ventanas ni notificaciones que lo distraigan.
+*   **Consumo Mínimo:** Está optimizado para usar muy poca memoria y procesador, por lo que no notará que su PC está más lenta.
+
+### ¿Qué hace exactamente?
+Cada **5 minutos** (o el tiempo configurado por su administrador), el agente despierta, revisa la configuración de red de su equipo y envía un reporte seguro al servidor central. Luego vuelve a "dormir".
+
+---
+
+## 5. ¿Cómo sé que está funcionando?
+
+Dado que el programa no tiene interfaz visual (ventanas), puede verificar que está corriendo de la siguiente manera:
+
+1.  Presione las teclas `Ctrl + Shift + Esc` para abrir el **Administrador de Tareas**.
+2.  Vaya a la pestaña **Servicios**.
+3.  Busque en la lista un servicio llamado **"Network Scanner Service"** (o Client System Agent).
+4.  El estado debe decir **"En ejecución"** (Running).
+
+---
+
+## 6. Información que Recopila
+
+Por razones de transparencia, listamos aquí los datos que el agente lee de su equipo. **El agente NO lee sus archivos personales, correos ni contraseñas.**
+
+Solo recolecta información técnica:
+1.  **Identidad:**
+    *   Nombre del equipo (ej. `PC-CONTABILIDAD-01`).
+    *   Fabricante (ej. `Dell`, `HP`).
+    *   Modelo del sistema.
+2.  **Sistema:**
+    *   Versión de Windows instalada.
+3.  **Red:**
+    *   Dirección IP (su "número telefónico" en la red).
+    *   Dirección MAC (identificador único de su tarjeta de red).
+4.  **Seguridad (Puertos):**
+    *   Lista de servicios que están escuchando conexiones (ej. Escritorio Remoto, Carpetas Compartidas).
+    *   Esto es vital para saber si su PC tiene "puertas traseras" abiertas.
+
+---
+
+## 7. Preguntas Frecuentes (FAQ)
+
+**P: ¿El programa hará lenta mi computadora?**
+**R:** No. El agente es extremadamente ligero y pasa el 99% del tiempo inactivo.
+
+**P: ¿El agente espía lo que hago en internet?**
+**R:** No. El agente no monitorea su navegación, ni su historial, ni sus archivos. Solo mira la configuración técnica de la red.
+
+**P: ¿Puedo cerrarlo si necesito más velocidad para un juego o programa pesado?**
+**R:** No se recomienda. Al ser un servicio de sistema, está protegido para garantizar la seguridad de la red organizacional. Su consumo es tan bajo que cerrarlo no mejorará el rendimiento de juegos.
+
+**P: ¿Necesito actualizarlo manualmente?**
+**R:** No. Si se requiere una actualización, esta será desplegada automáticamente por los administradores de sistemas.
+
+---
+
+## 8. Desinstalación
+
+Si necesita eliminar el agente (por ejemplo, si va a dar de baja el equipo), debe hacerlo desde el Panel de Control, como cualquier otro programa:
+
+1.  Abra el menú Inicio y escriba **"Panel de Control"**.
+2.  Vaya a **Programas y Características** (o "Desinstalar un programa").
+3.  Busque **"Client System Agent"** en la lista.
+4.  Haga clic derecho y seleccione **Desinstalar**.
+5.  Siga las instrucciones en pantalla.
+
+---
+*Documento generado para uso interno y educativo.*
