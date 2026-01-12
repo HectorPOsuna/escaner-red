@@ -1,143 +1,105 @@
-# Escáner de Red y Monitor de Conflictos
+# Monitor de Actividad de Protocolos de Red
 
-Sistema integral de monitoreo de red que combina un potente agente de escaneo en PowerShell con un backend en **PHP** para detectar dispositivos, identificar fabricantes y alertar sobre conflictos de IP/MAC en tiempo real.
+**Versión Actual:** v0.3.0
 
-### 🖥️ Aplicación de Bandeja (System Tray)
+## 📋 Información General
 
-La solución incluye una aplicación gráfica (`NetworkScannerUI`) que se ejecuta en la bandeja del sistema para monitorear el servicio.
+El **Monitor de Actividad de Protocolos de Red** es un sistema integral diseñado para la recolección, análisis y visualización de métricas de red y actividad de puertos en entornos locales. Desarrollado bajo un contexto académico, este proyecto tiene como propósito demostrar la arquitectura de sistemas distribuidos mediante la implementación de un agente de monitoreo y un servidor centralizado de procesamiento.
 
-**Características:**
-- Icono en el área de notificaciones
-- Menú contextual para Iniciar/Detener el servicio
-- Acceso rápido a los Logs
-- Indicador visual de estado
+El sistema permite identificar la actividad de red del host, incluyendo puertos TCP/UDP activos, direcciones IP, y metadatos del sistema operativo, facilitando el análisis de comportamiento de red en tiempo real.
 
-**Instalación (Auto-arranque):**
-Para que la UI inicie automáticamente con Windows:
-1. Copia el ejecutable `NetworkScannerUI.exe` a una ruta permanente.
-2. Crea un acceso directo en `shell:startup` O agrega una clave de registro en:
-   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
-   Nombre: `NetworkScannerUI`
-   Valor: `"C:\Ruta\A\NetworkScannerUI.exe"`
+## 🚧 Estado del Proyecto
 
-## 🚀 Características Principales
+> **Estado:** v0.3.0 (Estable - Desarrollo Activo)
 
-*   **Escaneo Inteligente**: Agente PowerShell optimizado con ejecución en paralelo y caché de puertos.
-*   **Detección Híbrida**: Identificación de Sistema Operativo mediante WMI (Windows Domain) y análisis de TTL.
-*   **Backend PHP Eficiente**: Procesamiento asíncrono mediante scripts programados (Cron/Task Scheduler) o API REST.
-*   **Validación de Conflictos**: Detecta automáticamente:
-    *   **IP Duplicada**: Misma IP en diferentes Hostnames/MACs.
-    *   **MAC Duplicada**: Misma MAC en diferentes Hostnames.
-*   **Base de Datos de Fabricantes**: Identificación automática usando seeders locales (OUI IEEE).
+El proyecto ha alcanzado la versión **v0.3.0**, completando todas las milestones definidas para esta etapa. El sistema es totalmente funcional, estable y demostrable. Sin embargo, se mantiene en la rama de versiones `0.x` para reflejar que continúa en desarrollo activo, con mejoras arquitectónicas y funcionales planificadas para futuras iteraciones.
 
-## 🏗️ Arquitectura y Flujo de Datos
+**¿Qué significa v0.3.0?**
+- El núcleo del sistema (agente, API, base de datos) es sólido.
+- La funcionalidad principal de escaneo y reporte está operativa.
+- No se considera un producto final comercial, sino una implementación académica robusta.
 
-El sistema funciona desacoplando el escaneo (Agente) del procesamiento (Servidor).
+## 🏗️ Arquitectura General
+
+El sistema sigue una arquitectura **Cliente-Servidor** desacoplada, donde el agente recolector opera independientemente del sistema de procesamiento y almacenamiento.
+
+### Flujo de Datos
+
+1.  **Recolección**: El Agente (.NET Service) escanea el host local.
+2.  **Transmisión**: Los datos se envían vía HTTP POST a la API REST.
+3.  **Procesamiento**: El Backend recibe, valida y clasifica la información.
+4.  **Persistencia**: Los datos procesados se almacenan en una base de datos relacional.
 
 ```mermaid
-graph TD
-    subgraph "Agente (Cliente)"
-        A[NetworkScanner.ps1] -->|1. Ping Sweep & Port Scan| B(Red Local)
-        A -->|2. Detecta SO & Mac| B
-        A -->|3. Genera JSON| C[scan_results.json]
-        A -->|4. POST| D[API: receive.php]
+graph LR
+    subgraph "Cliente (Host Local)"
+        A[Agente .NET 8] -->|Monitoreo| B(Sistema Operativo / Red)
+        A -->|POST JSON| C[API Remota]
     end
 
     subgraph "Servidor (Backend)"
-        D -->|5. Valida & Procesa| E{Lógica Interna}
-        E -->|6. Detecta Conflictos| E
-        E -->|7. Persiste| F[(MySQL Database)]
-    end
-
-    subgraph "Visualización"
-        G[Dashboard Web] -->|Consulta| H[api/dashboard.php]
-        H -->|Lee| F
-        I[Tray App] -->|Monitorea| A
+        C -->|Validación| D[Lógica de Negocio]
+        D -->|Persistencia| E[(Base de Datos MySQL)]
     end
 ```
 
-1.  **Agente**: Ejecuta el escaneo y envía los resultados directamente vía API REST.
-2.  **Servidor**: El endpoint `receive.php` procesa los datos en tiempo real, detectando cambios y conflictos antes de guardarlos.
+## 🧩 Componentes del Sistema
 
-## 📚 Documentación Completa
+### 1. Cliente (Agente de Monitoreo)
+El componente cliente es un servicio de fondo desarrollado en **.NET 8**, diseñado para ser eficiente y poco intrusivo.
 
-Para detalles profundos sobre el funcionamiento y uso del sistema, consulta nuestros manuales:
+*   **Tecnología**: .NET 8 (C#).
+*   **Ejecución**: Servicio de Windows (Windows Service).
+*   **Despliegue**: Compilado como *Self-Contained* (no requiere instalar el runtime de .NET manualmente en el host destino si se usa el instalador completo).
+*   **Alcance**: Escaneo estrictamente limitado al **Localhost** (127.0.0.1 / ::1) y la interfaz de red local. No realiza escaneos, barridos de red externa ni fuerza bruta.
+*   **Datos Recolectados**:
+    *   Direcciones IP y configuración de interfaz.
+    *   Hostname y detalles del Sistema Operativo.
+    *   Dirección MAC.
+    *   Estado de puertos TCP y UDP (activos/inactivos).
+    *   Timestamps e historial de conexión.
 
-*   📘 **[Manual de Usuario](docs/manual_usuario.md)**: Guía para entender el Dashboard, la aplicación de bandeja y solución de problemas básicos.
-*   ⚙️ **[Manual Técnico](docs/manual_tecnico.md)**: Documentación para desarrolladores. Incluye diagrama **ER de Base de Datos**, referencia de **API**, y explicación detallada de los scripts.
+### 2. Backend / API
+El servidor actúa como el punto central de verdad, exponiendo endpoints REST para la recepción de datos.
 
-## 🛠️ Requisitos del Sistema
+*   **Responsabilidad**: Recibir los payloads JSON del agente.
+*   **Procesamiento**: Clasifica los puertos detectados (conocidos vs. desconocidos) y actualiza el estado de los protocolos.
+*   **Separación**: Mantiene la lógica de negocio aislada del cliente, permitiendo actualizar las reglas de clasificación sin modificar los agentes instalados.
 
-*   **Agente**:
-    *   Windows con PowerShell 5.1+ (Recomendado PowerShell 7+ para paralelismo).
-    *   (Opcional) Linux con PowerShell Core instalado.
-*   **Backend (Servidor)**:
-    *   PHP 7.4 o superior.
-    *   Extensiones PHP: `php-pdo`, `php-mysql`, `php-json`.
-*   **Base de Datos**:
-    *   MySQL 8.0 o MariaDB equivalente.
-    *   **Node.js & NPM** (Para inicialización y seeders).
+### 3. Base de Datos
+El sistema utiliza un modelo relacional robusto para garantizar la integridad de los datos históricos.
 
-## 📦 Guía de Instalación y Configuración
+*   **Enfoque**: Integridad referencial y normalización.
+*   **Modelo**: Relacional (MySQL/MariaDB).
+*   **Almacenamiento**: Mantiene un registro histórico de puertos abiertos, permitiendo auditoría y análisis de tendencias sobre qué servicios se ejecutan en el host a lo largo del tiempo.
 
-### 1. Configuración de Base de Datos
+## 📚 Documentación
 
-El proyecto incluye herramientas automatizadas en Node.js para la creación del esquema y la carga de datos (OUI, Puertos, etc.).
+La documentación del proyecto ha sido actualizada para la versión v0.3.0:
 
-1.  **Configurar Variables de Entorno (.env)**:
-    En la raíz del proyecto, crea un archivo `.env` basado en el siguiente ejemplo:
-    ```ini
-    # .env
-    DB_HOST=localhost
-    DB_PORT=3306
-    DB_USER=tu_usuario
-    DB_PASSWORD=tu_contraseña
-    DB_NAME=escaner_red
-    ```
+*   📖 **[Manual de Usuario](docs/manual_usuario.md)**: Guía para la instalación, configuración y uso básico del sistema.
+*   ⚙️ **[Manual Técnico](docs/manual_tecnico.md)**: Detalles profundos sobre la estructura del código, endpoints de la API y esquema de base de datos.
 
-2.  **Inicializar Base de Datos (Node.js)**:
-    Navega a la carpeta `database` e instala las dependencias:
-    
-    ```bash
-    cd database
-    npm install
-    ```
+## 🔖 Versionado
 
-    Ejecuta el script maestro de inicialización:
-    ```bash
-    npm run db:full-init
-    ```
-    
-    *Este comando ejecutará las migraciones (`migrations/*.sql`) y descargará/cargará los seeders actualizados (`fabricantes`, `protocolos`).*
+Este proyecto se adhiere a [Semantic Versioning 2.0.0](https://semver.org/).
 
-### 2. Configuración del Servidor (Backend)
+*   **Versión actual (0.3.0)**: Indica un incremento en funcionalidad menor (minor) compatible hacia atrás, manteniendo el "major" en 0 para denotar la fase de desarrollo inicial y académica.
 
-El sistema utiliza una **API REST** para la ingesta de datos.
+## ⚖️ Consideraciones Legales y de Uso
 
-1.  **Servidor Web**: Configura tu servidor (Apache/Nginx/IIS) para servir la carpeta del proyecto.
-2.  **Ruta de API**: El agente debe apuntar a `.../server/api/receive.php`.
-    *   *Nota*: Asegúrate que este archivo sea accesible desde la red.
+*   **Uso Académico**: Este software ha sido desarrollado con fines estrictamente educativos y de demostración tecnológica.
+*   **Alcance del Escaneo**: El agente está programado para monitorear únicamente el dispositivo donde está instalado (Localhost). No está diseñado ni autorizado para auditar redes de terceros, realizar *pentesting* ni actividades de intrusión.
+*   **Responsabilidad**: El usuario es responsable de asegurar que tiene los permisos necesarios para instalar y ejecutar servicios de monitoreo en el equipo anfitrión.
 
-### 3. Ejecución del Agente
+## 🗺️ Roadmap
 
-El `NetworkScanner.ps1` debe configurarse con la URL de tu servidor.
+Aunque el proyecto cumple sus objetivos actuales, algunas áreas de mejora potencial incluyen:
 
-## 📂 Archivos Clave para el Funcionamiento
+*   Implementación de autenticación segura (JWT) para la comunicación Agente-API.
+*   Dashboard web interactivo para visualización de estadísticas.
+*   Alertas en tiempo real para detección de puertos no autorizados.
+*   Soporte multiplataforma (Linux/macOS) para el agente .NET.
 
-*   **`.env`**: Archivo de configuración maestro. Aquí se definen las credenciales de la BD.
-*   **`server/api/receive.php`**: Endpoint principal de la API. Ingesta datos del agente y maneja la lógica de negocio.
-*   **`server/webroot/api/dashboard.php`**: API de lectura para el Dashboard.
-*   **`agent/NetworkScanner.ps1`**: Script del agente PowerShell.
-
-## 🚨 Solución de Problemas Comunes
-
-*   **Agente muestra error de conexión API**:
-    *   Verifica que la URL en `agent/config.ps1` sea correcta y accesible. Puedes probar abriéndola en el navegador (debería decir "Método no permitido" o "API Online" si es GET).
-    *   Revisa el firewall del servidor.
-*   **Error "Connection refused" en BD**:
-    *   Revisa `DB_HOST` en `.env`. Si usas Docker o WSL, `localhost` podría no ser correcto (prueba `127.0.0.1` o la IP del host).
-*   **Powershell Script Execution Disabled**:
-    *   Ejecuta `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser` en Windows.
-
-## 📄 Licencia
-Distribuido bajo licencia MIT.
+---
+© 2026 - Proyecto Universitario - Monitor de Actividad de Protocolos de Red
