@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Network Scanner - Build & Package Script" -ForegroundColor Cyan
+Write-Host "Client System Agent - Build & Package Script" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -42,19 +42,19 @@ dotnet publish $ServiceProject `
 if ($LASTEXITCODE -ne 0) { Write-Error "Falló compilación del servicio"; exit 1 }
 
 # --------------------------------------------------------------------------------
-# 2. Compilar UI (WPF)
+# 2. Compilar UI (WPF) - DESHABILITADO POR SEGURIDAD/STEALTH
 # --------------------------------------------------------------------------------
-Write-Host "2. Compilando UI (src)..." -ForegroundColor Green
-$UIProject = Join-Path $RootDir "src\NetworkScanner.UI\NetworkScanner.UI.csproj"
-$UIOutput = Join-Path $PackageDir "UI"
-
-dotnet publish $UIProject `
-    -c $Configuration `
-    -r win-x64 `
-    --self-contained false `
-    -o $UIOutput
-
-if ($LASTEXITCODE -ne 0) { Write-Error "Falló compilación de la UI"; exit 1 }
+# Write-Host "2. Compilando UI (src)..." -ForegroundColor Green
+# $UIProject = Join-Path $RootDir "src\NetworkScanner.UI\NetworkScanner.UI.csproj"
+# $UIOutput = Join-Path $PackageDir "UI"
+# 
+# dotnet publish $UIProject `
+#     -c $Configuration `
+#     -r win-x64 `
+#     --self-contained false `
+#     -o $UIOutput
+# 
+# if ($LASTEXITCODE -ne 0) { Write-Error "Falló compilación de la UI"; exit 1 }
 
 # --------------------------------------------------------------------------------
 # 3. Copiar Scripts del Agente
@@ -64,8 +64,8 @@ $AgentSrc = Join-Path $RootDir "agent"
 $AgentDest = Join-Path $PackageDir "Agent"
 New-Item -ItemType Directory -Path $AgentDest | Out-Null
 
-Copy-Item "$AgentSrc\NetworkScanner.ps1" -Destination $AgentDest
-Copy-Item "$AgentSrc\config.ps1" -Destination $AgentDest
+Copy-Item "$AgentSrc\LocalHostScanner.ps1" -Destination "$AgentDest\NetworkScanner.ps1"
+# Copy-Item "$AgentSrc\config.ps1" -Destination $AgentDest
 
 # --------------------------------------------------------------------------------
 # 4. Copiar Backend PHP (Unificado)
@@ -119,10 +119,35 @@ $ReadmeContent = @"
    - Ejecutar 'install-service.ps1' como Administrador
 
 5. **UI (System Tray)**
-   - Ejecutar 'UI\NetworkScannerUI.exe'
-   - (El instalador ya debería haber configurado el auto-arranque)
+   - (Deshabilitado en esta versión stealth)
+   - El servicio corre en background automáticamente.
 "@
 Set-Content -Path "$PackageDir\LEEME_INSTALACION.md" -Value $ReadmeContent
+
+# --------------------------------------------------------------------------------
+# 7.5 Descargar Prerrequisitos (.NET Runtime)
+# --------------------------------------------------------------------------------
+Write-Host "7.5 Verificando prerrequisitos (.NET 8.0)..." -ForegroundColor Green
+$PrereqDir = Join-Path $PackageDir "Prerequisites"
+New-Item -ItemType Directory -Path $PrereqDir -Force | Out-Null
+
+$DotNetUrl = "https://aka.ms/dotnet/8.0/dotnet-runtime-win-x64.exe"
+$DotNetInstaller = Join-Path $PrereqDir "dotnet-runtime-8.0-win-x64.exe"
+
+if (-not (Test-Path $DotNetInstaller)) {
+    Write-Host "   Descargando .NET 8.0 Runtime desde Microsoft..." -ForegroundColor Cyan
+    try {
+        Invoke-WebRequest -Uri $DotNetUrl -OutFile $DotNetInstaller -ErrorAction Stop
+        Write-Host "   Descarga completada." -ForegroundColor Green
+    }
+    catch {
+        Write-Error "   Error descargando .NET Runtime: $_"
+        # No salimos con error fatal, intentamos seguir, pero el instalador fallará si lo requiere
+        exit 1
+    }
+} else {
+    Write-Host "   Instalador .NET ya existe en caché." -ForegroundColor Gray
+}
 
 # --------------------------------------------------------------------------------
 # 8. Generar Instalador .EXE (Inno Setup)
@@ -145,11 +170,13 @@ if (Test-Path $InnoSetupPath) {
         Write-Host "========================================" -ForegroundColor Green
         Write-Host "INSTALADOR EXE GENERADO EXITOSAMENTE" -ForegroundColor Green
         Write-Host "========================================" -ForegroundColor Green
-        Write-Host "Ubicación: $DistDir\NetworkScanner_Setup.exe" -ForegroundColor Cyan
-    } else {
+        Write-Host "Ubicación: $DistDir\ClientAgent_Setup.exe" -ForegroundColor Cyan
+    }
+    else {
         Write-Error "Falló Inno Setup (Exit Code: $($Process.ExitCode))"
     }
-} else {
+}
+else {
     Write-Host "⚠️  ADVERTENCIA: Inno Setup no encontrado." -ForegroundColor Yellow
     Write-Host "   Se generó el paquete ZIP pero NO el instalador EXE." -ForegroundColor Yellow
     Write-Host "   Instala Inno Setup 6+ para generar el ejecutable final." -ForegroundColor Gray

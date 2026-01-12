@@ -1,188 +1,192 @@
-# Manual Técnico - Monitor de Actividad de Protocolos de Red
+# Manual Técnico - Agente de Monitoreo de Red
 
-## 1. Visión General del Sistema
+**Versión:** 2.0  
+**Fecha:** Enero 2026  
+**Tecnología:** .NET 8 (Cliente) / PHP & MySQL (Backend)
 
-El **Monitor de Actividad de Protocolos de Red** es una solución híbrida diseñada para la detección, inventario y monitoreo de dispositivos en una red local. Su arquitectura se divide en dos componentes principales: un **Agente de Escaneo (PowerShell)** que recolecta datos desde los endpoints, y un **Servidor Central (PHP/MySQL)** que procesa, almacena y visualiza la información, detectando conflictos en tiempo real.
+---
 
-### 1.1 Arquitectura del Sistema
+## 1. Introducción Técnica
 
-El siguiente diagrama ilustra el flujo de datos desde la recolección hasta la visualización:
+### 1.1 Problema Identificado
+En entornos de red heterogéneos, mantener un inventario actualizado y real de los dispositivos, sus sistemas operativos y los servicios (puertos) expuestos es un desafío crítico. Los escaneos externos a menudo son bloqueados por firewalls locales, y los inventarios manuales quedan obsoletos rápidamente.
+
+### 1.2 Solución Propuesta
+El sistema implementa una arquitectura **Cliente-Servidor mediante Agente**. Un servicio de Windows ligero (.NET 8) instalado en cada equipo realiza introspección local ("localhost scan") para recolectar telemetría de red fidedigna y la transmite a una API centralizada.
+
+### 1.3 Alcance
+- **Cliente:** Servicio Windows `NetworkScanner.Service` (Self-contained, No requiere instalación previa de .NET Runtime).
+- **Servidor:** API REST en PHP hospedada en servidor Linux/Apache.
+- **Datos:** Identidad del host, Interfaces de Red, Estado de Puertos (TCP/UDP) y cambios históricos.
+
+---
+
+## 2. Arquitectura del Sistema
+
+El sistema sigue un modelo de **Telemetría Push**. Los agentes son autónomos y envían datos periódicamente.
 
 ```mermaid
 graph TD
-    subgraph "Agente de Recolección (Cliente)"
-        A[NetworkScanner.ps1] -->|Ping Sweep Paralelo| B(Red Local)
-        A -->|Escaneo Puertos| B
-        A -->|Detección OS (TTL/WMI)| B
-        A -->|Genera JSON| C[scan_results.json]
-        A -->|POST| D[API: receive.php]
+    subgraph "Cliente (Endpoint Windows)"
+        A[Windows Service Runner] -->|Start| B[ScannerWorker]
+        B -->|Invoca| C[LocalHost Scanner]
+        C -->|Consulta| D["OS APIs / Registry"]
+        C -->|Consulta| E[Network Stack]
+        C -->|Genera| F[In-Memory History]
     end
 
-    subgraph "Servidor Central (Backend)"
-        D -->|1. Valida Payload| D
-        D -->|2. Procesa Lógica| E{Lógica Interna}
-        E -->|3. Detecta| F[Conflictos IP/MAC]
-        E -->|4. Persiste| G[(MySQL Database)]
+    subgraph "Servidor (Infraestructura)"
+        G["API Gateway (PHP)"] -->|Valida & Procesa| H[Logic Processor]
+        H -->|Upsert| I[("MySQL Database")]
     end
 
-    subgraph "Visualización (Frontend)"
-        H[Dashboard Web] -->|Consulta| I[API: dashboard.php]
-        I -->|Lee| G
-        J[Tray App (C#)] -->|Monitorea| A
-    end
+    B -->|HTTP POST JSON| G
+```
+
+### 2.1 Justificación Tecnológica
+*   **.NET 8 Self-Contained:** Garantiza que el agente funcione en cualquier máquina Windows moderna sin dependencias externas ni instalaciones previas de frameworks, reduciendo la fricción de despliegue.
+*   **API REST:** Desacopla la lógica de recolección de la lógica de negocio. Permite que el agente sea "tonto" (solo recolecta) y el servidor "inteligente" (analiza, clasifica y alerta).
+
+---
+
+## 3. Cliente (Module: NetworkScanner.Service)
+
+El núcleo del cliente es un **Windows Service** diseñado para operar en segundo plano (Session 0) sin interacción de usuario.
+
+### 3.1 Ciclo de Vida
+1.  **OnStart:** Inicializa el `HostApplicationBuilder`, configura DI (Dependency Injection) y logging.
+2.  **Worker Loop (`ScannerWorker.cs`):**
+    *   Ejecuta `EjecutarCicloEscaneo()` inmediatamente.
+    *   Entra en espera (`Task.Delay`) según `IntervalMinutes` configurado.
+    *   Maneja excepciones con un patrón de **Exponential Backoff** y **Circuit Breaker** para evitar saturar la red o logs en caso de fallo.
+3.  **OnStop:** Cierre ordenado de hilos y limpieza de recursos.
+
+### 3.2 Módulos Internos
+*   **LocalHostScanner:** Clase nativa en C# (reemplazo de scripts PowerShell) que utiliza `System.Net.NetworkInformation`.
+*   **Port State Tracker:** Diccionario en memoria que compara el estado actual de puertos con el ciclo anterior para detectar eventos `OPENED` o `CLOSED`.
+
+---
+
+## 4. Escaneo del Host Local
+
+A diferencia de los escáneres de red tradicionales (Nmap) que lanzan paquetes a la red, este agente realiza **introspección del sistema operativo**.
+
+### 4.1 Proceso de Recolección
+1.  **Detección de Host:**
+    *   **Hostname:** `Dns.GetHostName()`
+    *   **Sistema Operativo:** `RuntimeInformation.OSDescription`
+    *   **Fabricante:** Lectura directa del Registro de Windows (`HARDWARE\DESCRIPTION\System\BIOS`).
+2.  **Detección de Puertos:**
+    *   Usa `IPGlobalProperties.GetActiveTcpListeners()` y `GetActiveUdpListeners()`.
+    *   **Filtrado:** Ignora puertos efímeros dinámicos (generalmente > 49152) para reducir ruido.
+3.  **Gestión de Historial:**
+    *   Mantiene un buffer circular (`_globalHistory`) de los últimos 1000 eventos de cambio de estado.
+    *   Registra Timestamps en **UTC** para consistencia global.
+
+---
+
+## 5. Protocolo de Comunicación (API)
+
+El agente serializa los datos y los envía vía HTTP POST.
+
+### 5.1 Payload JSON (Estructura de Compatibilidad)
+El agente encapsula los datos en un formato `Devices` para compatibilidad con la lógica de procesamiento masivo del backend.
+
+```json
+{
+  "Devices": [
+    {
+      "IP": "192.168.1.50",
+      "MAC": "AA:BB:CC:DD:EE:FF",
+      "Hostname": "DESKTOP-CLIENT-01",
+      "OS": "Microsoft Windows 10.0.19045",
+      "Manufacturer": "Dell Inc.",
+      "OpenPorts": [
+        { "port": 80, "protocol": "TCP" },
+        { "port": 443, "protocol": "TCP" },
+        { "port": 3389, "protocol": "UDP" }
+      ]
+    }
+  ]
+}
 ```
 
 ---
 
-## 2. Componentes del Sistema
+## 6. Backend y Lógica de Negocio
 
-### 2.1 Agente de Escaneo (`agent/NetworkScanner.ps1`)
+El archivo `receive.php` actúa como controlador principal.
 
-El corazón de la recolección de datos. Es un script de PowerShell optimizado para ejecutarse en segundo plano.
-
-*   **Fase 1: Ping Sweep Paralelo**: Utiliza Runspaces de .NET para enviar pings ICMP a toda la subred (1-254) simultáneamente.
-*   **Fase 2: Escaneo de Puertos**: Para cada host activo, escanea puertos comunes.
-    *   *Optimización*: Posee una caché (`port_scan_cache.json`) con TTL de 10 minutos.
-*   **Fase 3: Fingerprinting**: Deduce el SO basado en puertos abiertos, TTL y Hostname.
-
-### 2.2 Servidor y API (`server/api/`)
-
-Backend desarrollado en PHP nativo que centraliza la lógica de negocio en un único punto de entrada para escritura.
-
-*   **`api/receive.php`**: El "cerebro" del backend.
-    *   **Validación**: Verifica integridad del JSON y formato de IPs/MACs.
-    *   **Procesamiento**: Contiene la clase `Processor` embebida que gestiona la transacción DB.
-    *   **Detección de Conflictos**: Compara en tiempo real los datos entrantes con el inventario histórico.
-*   **`db_config.php`**: Archivo de configuración global de base de datos (compartido con el frontend).
+### 6.1 Flujo de Procesamiento
+1.  **Validación:** Verifica integridad del JSON y formato de direcciones IP/MAC.
+2.  **Normalización:** Estandariza MAC addresses y nombres de host.
+3.  **Detección de Conflictos:** Compara la IP/MAC entrante con la base de datos para detectar suplantaciones o duplicados.
+4.  **Mapeo Inteligente:**
+    *   Clasifica el Sistema Operativo basado en puertos abiertos y firmas (TTL, banners) si el agente no lo reporta explícitamente.
+5.  **Persistencia (Micro-ORM):**
+    *   **Equipos:** *Upsert* (Update or Insert) basado en MAC/IP.
+    *   **Protocolos Usados:** Sincroniza el estado `activo`/`inactivo`.
+    *   **Historial:** Cierra sesiones abiertas de puertos que ya no se detectan y abre nuevas sesiones para puertos nuevos.
 
 ---
 
-## 3. Modelo de Datos (Diagrama ER)
+## 7. Modelo de Datos (Base de Datos)
 
-La base de datos está normalizada para mantener la integridad de los inventarios y el historial de eventos.
+El sistema utiliza un esquema relacional normalizado en MySQL.
+
+### 7.1 Tablas Principales
+*   **`equipos`**: Inventario central. Claves únicas por IP y MAC.
+*   **`protocolos`**: Catálogo maestro de puertos estándar (80=HTTP, etc.) y su clasificación de seguridad (seguro/inseguro).
+*   **`protocolos_usados`**: Tabla de estado actual. Relaciona Equipo <-> Protocolo.
+    *   *Constraint*: `UNIQUE KEY (id_equipo, id_protocolo, puerto_detectado)` permite actualizaciones atómicas.
+*   **`historial_puertos`**: Log de auditoría.
+    *   Campos: `fecha_inicio`, `fecha_fin`. Permite reconstruir el estado de la red en cualquier punto del tiempo.
+
+---
+
+## 8. Diagrama de Secuencia
 
 ```mermaid
-erDiagram
-    FABRICANTES ||--|{ EQUIPOS : "produce"
-    SISTEMAS_OPERATIVOS ||--|{ EQUIPOS : "ejecuta"
-    EQUIPOS ||--|{ PROTOCOLOS_USADOS : "tiene"
-    PROTOCOLOS ||--|{ PROTOCOLOS_USADOS : "es_usado_en"
-    EQUIPOS ||--|{ CONFLICTOS : "genera"
-    EQUIPOS ||--|{ LOGS : "registra"
+sequenceDiagram
+    participant S as Service (Agent)
+    participant LHS as LocalHostScanner
+    participant API as API (PHP)
+    participant DB as MySQL
 
-    FABRICANTES {
-        int id_fabricante PK
-        string nombre
-        string oui_mac UK "Primeros 6 chars de MAC"
-    }
+    loop Cada 5 Minutos
+        S->>LHS: ScanAsync()
+        LHS->>LHS: GetActiveTcpListeners()
+        LHS->>LHS: UpdatePortStates()
+        LHS-->>S: Resultado (Snapshot + Historial)
+        S->>S: Serializar a JSON
+        S->>API: POST /receive.php
+        
+        API->>API: Validar & Normalizar
+        API->>DB: SELECT * FROM equipos WHERE ip = ...
+        
+        alt Equipo Nuevo
+            API->>DB: INSERT INTO equipos
+        else Equipo Existente
+            API->>DB: UPDATE equipos SET ultima_deteccion = NOW()
+        end
 
-    EQUIPOS {
-        int id_equipo PK
-        string hostname
-        string ip UK
-        string mac UK
-        int fabricante_id FK
-        int id_so FK
-        datetime ultima_deteccion
-    }
-
-    SISTEMAS_OPERATIVOS {
-        int id_so PK
-        string nombre UK
-    }
-
-    PROTOCOLOS {
-        int id_protocolo PK
-        int numero UK "Puerto"
-        string nombre
-        enum category "seguro, inseguro, etc"
-    }
-
-    PROTOCOLOS_USADOS {
-        int id_uso PK
-        int id_equipo FK
-        int id_protocolo FK
-        enum estado "activo, inactivo"
-    }
-
-    CONFLICTOS {
-        int id_conflicto PK
-        string ip
-        string mac
-        string descripcion
-        enum estado "activo, resuelto"
-    }
+        API->>DB: Sincronizar Protocolos (ON DUPLICATE KEY UPDATE)
+        API->>DB: Cerrar Sesiones (Historial) de puertos caídos
+        
+        API-->>S: 200 OK
+    end
 ```
-
-### 3.1 Diccionario de Datos
-
-**Tabla `equipos`**
-| Columna | Tipo | Descripción |
-|---------|------|-------------|
-| `id_equipo` | INT (PK) | Identificador único. |
-| `ip` | VARCHAR(45) | Dirección IP actual (Debe ser única). |
-| `mac` | VARCHAR(17) | Dirección física (Debe ser única). |
-| `fabricante_id` | INT (FK) | Referencia a tabla `fabricantes`. Determinada por OUI. |
-
-**Tabla `protocolos`**
-| Columna | Tipo | Descripción |
-|---------|------|-------------|
-| `categoria` | ENUM | Clasificación de seguridad: 'seguro', 'inseguro', 'esencial', 'base_de_datos', etc. Usado para colorear el dashboard. |
 
 ---
 
-## 4. Referencia de API
+## 9. Seguridad
 
-### 4.1 Ingesta de Datos
-*   **Endpoint**: `/server/api/receive.php`
-*   **Método**: `POST`
-*   **Cuerpo**: JSON
-*   **Formato**:
-    ```json
-    [
-      {
-        "IP": "192.168.1.10",
-        "MAC": "AA:BB:CC:DD:EE:FF",
-        "Hostname": "PC-SALA-1",
-        "OS": "Windows 10",
-        "OpenPorts": [
-          {
-            "Port": 80,
-            "Service": "HTTP",
-            "Category": "inseguro"
-          }
-        ]
-      }
-    ]
-    ```
+1.  **Alcance Limitado:** El agente NO realiza escaneos de red horizontal (scanning de otros equipos), limitándose estrictamente a `127.0.0.1`. Esto evita activar sistemas IDS/IPS corporativos.
+2.  **Ejecución Privilegiada:** Requiere permisos de Administrador local solo para la instalación del servicio; la ejecución posterior es de bajo impacto.
+3.  **Validación de Datos:** El backend sanitiza todas las entradas SQL para prevenir inyección.
 
-### 4.2 Dashboard Data
-*   **Endpoint**: `/server/api/dashboard.php`
-*   **Método**: `GET`
-*   **Respuesta**:
-    ```json
-    {
-      "summary": {
-        "total_devices": 15,
-        "active_conflicts": 2
-      },
-      "devices": [...],
-      "conflicts": [...]
-    }
-    ```
+## 10. Mejoras Futuras Identificadas
 
-## 5. Lógica de Detección de Conflictos
-
-El sistema evalúa cada dispositivo entrante (`D_new`) contra la base de datos (`D_db`):
-
-1.  **Conflicto de IP**: Si existe un `D_db` con la misma IP que `D_new` pero diferente MAC.
-    *   *Significado*: Dos dispositivos peleando por la misma dirección IP.
-    *   *Acción*: Se registra en tabla `conflictos`.
-
-2.  **Conflicto de MAC**: Si existe un `D_db` con la misma MAC que `D_new` pero diferente IP.
-    *   *Nota*: Esto suele ser normal (DHCP cambiando IP), pero el sistema lo registra como evento si ocurre muy frecuentemente o si la IP anterior sigue respondiendo. Actualmente el sistema actualiza la IP si la MAC coincide, pero alerta si hay inestabilidad.
-
-## 6. Seguridad y Permisos
-
-*   **Database**: Se recomienda un usuario de MySQL con permisos limitados (SELECT, INSERT, UPDATE) exclusivamente para el aplicativo.
-*   **Agente**: Requiere permisos de Administrador local (o capacidad de raw socket) para ejecutar Pings ICMP de alta velocidad y escaneos SYN (si se configurara). En modo usuario estándar usa `Test-Connection` que es más lento.
+*   **Autenticación Mutua (mTLS):** Para asegurar que solo agentes autorizados envíen datos.
+*   **Cola de Mensajes:** Implementar RabbitMQ/Kafka antes de la API para soportar miles de agentes concurrentes.
+*   **Actualización Remota:** Capacidad del agente de descargar y aplicar parches desde el servidor.

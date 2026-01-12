@@ -1,0 +1,125 @@
+TÉRMINOS Y CONDICIONES DE USO
+
+Escáner de Red / Monitor de Actividad de Protocolos
+
+1. ACEPTACIÓN DE LOS TÉRMINOS
+
+Al instalar, ejecutar, copiar o utilizar este software, usted acepta expresamente los presentes Términos y Condiciones de Uso.
+Si no está de acuerdo con alguno de ellos, no debe instalar ni utilizar el software.
+
+2. LICENCIA DE USO
+
+Este software se proporciona “tal cual” (AS IS), sin garantías de ningún tipo, ya sean expresas o implícitas, incluyendo, pero no limitándose a, garantías de funcionamiento, comerciabilidad o adecuación para un propósito particular.
+
+El autor concede al usuario una licencia limitada, no exclusiva y revocable para utilizar el software únicamente con fines académicos, educativos o de prueba, salvo que se indique lo contrario mediante una licencia adicional.
+
+3. USO AUTORIZADO
+
+El usuario se compromete a utilizar este software únicamente en sistemas, redes y entornos sobre los cuales tenga autorización expresa.
+
+Queda estrictamente prohibido el uso del software para:
+
+Actividades ilícitas
+
+Acceso no autorizado a redes o sistemas
+
+Violación de leyes locales, nacionales o internacionales
+
+Intercepción de información sin consentimiento
+
+El autor no se hace responsable del uso indebido del software por parte del usuario.
+
+4. EXENCIÓN DE RESPONSABILIDAD
+
+El autor no será responsable, bajo ninguna circunstancia, de daños directos, indirectos, incidentales, especiales o consecuentes derivados del uso o imposibilidad de uso del software, incluyendo, pero no limitándose a:
+
+Pérdida de datos
+
+Daños a sistemas
+
+Interrupciones de servicio
+
+Fallos de seguridad
+
+Sanciones administrativas o legales derivadas del uso indebido
+
+El uso del software es bajo su propio riesgo.
+
+5. ORIGEN Y DISTRIBUCIÓN DEL SOFTWARE
+
+El autor únicamente garantiza la integridad del software cuando este haya sido obtenido desde los repositorios oficiales:
+
+https://github.com/HectorPOsuna/escaner-red
+
+O su sitio web oficial de monitoreo (si aplica)
+
+El autor no se responsabiliza por versiones modificadas, redistribuidas o adulteradas obtenidas desde fuentes no oficiales.
+
+6. MODIFICACIONES Y ADULTERACIÓN DEL CÓDIGO
+
+Cualquier modificación, ingeniería inversa, descompilación o alteración del software se realiza bajo exclusiva responsabilidad del usuario.
+
+El autor no será responsable por:
+
+Fallos derivados de modificaciones
+
+Comportamientos inesperados
+
+Vulnerabilidades introducidas por terceros
+
+Uso de versiones no oficiales
+
+7. INSTALACIÓN DE COMPONENTES Y SERVICIOS
+
+Durante la instalación, el software podrá:
+
+Copiar archivos necesarios para su ejecución
+
+Registrar servicios del sistema
+
+Configurar opciones de inicio automático
+
+Instalar dependencias incluidas dentro del ejecutable
+
+Estas acciones son necesarias para el correcto funcionamiento del programa y se realizan únicamente con ese propósito.
+
+8. PRIVACIDAD Y DATOS
+
+Este software puede recopilar información técnica del sistema, tales como:
+
+Dirección IP
+
+Nombre del host
+
+Sistema operativo
+
+Dirección MAC
+
+Actividad de protocolos de red
+
+Dicha información se utiliza exclusivamente con fines de monitoreo técnico, análisis académico o pruebas, y su tratamiento es responsabilidad del usuario que despliega el software.
+
+9. DERECHOS DE AUTOR
+
+El software, su código fuente, documentación y materiales asociados están protegidos por las leyes de derechos de autor.
+
+Salvo que se indique expresamente mediante una licencia distinta:
+
+Todos los derechos están reservados
+
+No se concede ningún derecho de propiedad intelectual al usuario
+
+10. TERMINACIÓN
+
+El autor se reserva el derecho de revocar esta licencia en cualquier momento si se incumplen los presentes términos.
+
+En caso de terminación, el usuario deberá desinstalar y eliminar todas las copias del software.
+
+11. MODIFICACIONES A LOS TÉRMINOS
+
+El autor podrá modificar estos Términos y Condiciones en cualquier momento.
+Las versiones actualizadas estarán disponibles en el repositorio oficial del proyecto.
+
+12. LEGISLACIÓN APLICABLE
+
+Estos Términos y Condiciones se interpretarán conforme a la legislación vigente aplicable en el país del autor, sin perjuicio de normas imperativas del lugar donde se utilice el software.

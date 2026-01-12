@@ -1,0 +1,9 @@
+{
+  "devDependencies": {
+    "auto-changelog": {
+      "output": "CHANGELOG.md",
+      "template": "keepachangelog",
+      "unreleased": true
+    }
+  }
+}

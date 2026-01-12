@@ -1,6 +1,6 @@
 # Documentación del Modelo de Base de Datos
 
-Este documento describe el esquema relacional final utilizado en el proyecto **Escáner de Red**. El modelo ha sido diseñado siguiendo las reglas de normalización (3FN) para garantizar la integridad de los datos y evitar redundancias.
+Este documento describe el esquema relacional actual utilizado en el proyecto **Client System Agent**. El modelo ha sido diseñado siguiendo las reglas de normalización (3FN) para garantizar la integridad de los datos, evitar redundancias y mantener un historial auditado de cambios de estado.
 
 ## Diagrama Entidad-Relación (ER)
 
@@ -8,8 +8,10 @@ Este documento describe el esquema relacional final utilizado en el proyecto **E
 erDiagram
     FABRICANTES ||--|{ EQUIPOS : "fabrica"
     SISTEMAS_OPERATIVOS ||--|{ EQUIPOS : "ejecuta en"
-    EQUIPOS ||--|{ PROTOCOLOS_USADOS : "tiene"
+    EQUIPOS ||--|{ PROTOCOLOS_USADOS : "tiene estado actual"
+    EQUIPOS ||--|{ HISTORIAL_PUERTOS : "historial sesiones"
     PROTOCOLOS ||--|{ PROTOCOLOS_USADOS : "es usado por"
+    PROTOCOLOS ||--|{ HISTORIAL_PUERTOS : "referencia"
     EQUIPOS ||--|{ LOGS : "genera"
     
     FABRICANTES {
@@ -48,6 +50,16 @@ erDiagram
         datetime fecha_hora
         enum estado
         int puerto_detectado
+        string uk_uso_unico UK "Unico por (equipo, protocolo, puerto)"
+    }
+
+    HISTORIAL_PUERTOS {
+        int id_historial PK
+        int id_equipo FK
+        int id_protocolo FK
+        int puerto
+        datetime fecha_inicio
+        datetime fecha_fin "NULL = Activo"
     }
 
     CONFLICTOS {
@@ -75,51 +87,55 @@ erDiagram
 Catálogo de fabricantes de hardware de red.
 - **Propósito**: Normalizar los nombres de fabricantes asociados a las direcciones MAC.
 - **Datos Clave**: `oui_mac` (Identificador único de 6 caracteres hexadecimales).
-- **Sembrado**: Se alimenta automáticamente desde la lista oficial IEEE OUI.
+- **Sembrado**: Se alimenta automáticamente desde la lista oficial IEEE OUI y detecciones del agente.
 
 ### 2. `sistemas_operativos`
 Catálogo de sistemas operativos detectados.
-- **Propósito**: Evitar la repetición de cadenas de texto (ej. "Windows 10") en la tabla de equipos.
+- **Propósito**: Evitar la repetición de cadenas de texto y agrupar estadísticas (ej. "Windows 11", "Ubuntu 22.04").
 - **Datos Clave**: `nombre` (Único).
 
 ### 3. `protocolos`
 Catálogo maestro de protocolos de red y puertos estándar.
-- **Propósito**: Identificar servicios basándose en el número de puerto.
-- **Datos Clave**: `numero` (Puerto estándar), `categoria` (Clasificación de seguridad: seguro, inseguro, esencial, etc.).
-- **Sembrado**: Se alimenta automáticamente desde el registro de IANA.
+- **Propósito**: Identificar servicios basándose en el número de puerto y clasificarlos por riesgo.
+- **Datos Clave**: `numero` (Puerto estándar), `categoria` (seguro, inseguro, precaucion, bases_de_datos, etc.).
+- **Sembrado**: Se alimenta desde el registro de IANA y nuevas detecciones.
 
 ### 4. `equipos`
-Inventario principal de dispositivos detectados en la red.
-- **Propósito**: Almacenar el estado actual de cada dispositivo único.
+Inventario principal "vivo" de dispositivos detectados en la red.
+- **Propósito**: Almacenar la última foto conocida de cada dispositivo único.
 - **Restricciones**:
     - `ip` y `mac` deben ser únicas.
-    - `fabricante_id` es obligatorio (se usa un ID por defecto "Desconocido" si es necesario).
-    - Integridad referencial con `fabricantes` y `sistemas_operativos`.
+    - `fabricante_id` es obligatorio (FK).
+    - Integridad referencial con `sistemas_operativos`.
 
 ### 5. `protocolos_usados`
-Registro histórico y activo de servicios detectados en los equipos.
-- **Propósito**: Relación N:M entre `equipos` y `protocolos`. Permite saber qué servicios corre cada máquina.
-- **Detalle**: Guarda el `puerto_detectado` real, que podría diferir del puerto estándar del protocolo.
+**Estado Actual** ("Snapshot") de los puertos abiertos en cada equipo.
+- **Propósito**: Saber *en este momento* qué puertos están abiertos (activo) o cerrados recientes (inactivo).
+- **Clave Única**: `(id_equipo, id_protocolo, puerto_detectado)`. Esto permite al backend hacer "Upserts" eficientes para actualizar el timestamp de detección.
+- **Campo `estado`**: `activo` o `inactivo`. Se actualiza dinámicamente según la presencia del puerto en el último escaneo.
 
-### 6. `conflictos`
-Registro de anomalías de red.
-- **Propósito**: Auditar problemas como duplicidad de IPs, cambios sospechosos de MAC para un mismo Hostname (Spoofing), etc.
-- **Independencia**: No tiene claves foráneas estrictas para permitir registrar datos incluso si el equipo no está en el inventario.
+### 6. `historial_puertos`
+**Bitácora de Sesiones** de uso de puertos.
+- **Propósito**: Auditoría forense temporal. Registra *cuándo se abrió* y *cuándo se cerró* un puerto específico.
+- **Lógica**:
+    - `fecha_inicio`: Timestamp UTC de cuando se detectó el puerto abierto por primera vez.
+    - `fecha_fin`: Timestamp UTC de cuando dejó de detectarse. Si es `NULL`, la sesión sigue activa.
+- **Utilidad**: Permite responder preguntas como "¿Estuvo el puerto RDP abierto el sábado a las 3 AM?".
 
-### 7. `logs`
-Bitácora de eventos del sistema.
-- **Propósito**: Registrar acciones del agente, errores o cambios de estado importantes.
-- **Relación**: Opcionalmente vinculado a un `id_equipo`.
+### 7. `conflictos`
+Registro de anomalías de identidad.
+- **Propósito**: Auditar problemas como duplicidad de IPs (IP Conflict) o cambios de MAC (ARP Spoofing/Cambio de Hardware).
+- **Estado**: Conflictos pueden marcarse como `detectado` o `resuelto`.
 
-## Justificación de Relaciones
+### 8. `logs`
+Bitácora de eventos del sistema y la API.
+- **Propósito**: Registrar errores de procesamiento, descubrimientos de nuevos dispositivos y actualizaciones críticas.
 
-*   **Fabricante -> Equipo (1:N)**: Un fabricante crea muchos equipos, pero un equipo tiene un solo fabricante (determinado por su MAC). Usamos `ON DELETE RESTRICT` para evitar borrar fabricantes que tienen equipos activos.
-*   **SO -> Equipo (1:N)**: Un SO puede estar instalado en muchos equipos. Usamos `ON DELETE SET NULL` para que si se elimina un SO del catálogo, los equipos no se borren, solo queden con SO desconocido.
-*   **Equipo -> Protocolos Usados (1:N)**: Un equipo puede tener múltiples puertos abiertos. Usamos `ON DELETE CASCADE` para que si se elimina un equipo, se borre todo su historial de protocolos, manteniendo la limpieza de datos.
+## Justificación de Relaciones y Reglas
 
-## Posibles Extensiones Futuras
-
-1.  **Tabla `vulnerabilidades`**: Relacionar `protocolos` o `sistemas_operativos` con CVEs conocidos.
-2.  **Tabla `redes`**: Agrupar `equipos` por subredes o VLANs identificadas.
-3.  **Historial de Cambios (`equipos_historico`)**: En lugar de sobrescribir la IP/MAC en `equipos`, mover el registro antiguo a una tabla histórica para auditoría forense.
-4.  **Usuarios**: Si se implementa autenticación, relacionar equipos con usuarios responsables.
+*   **Fabricante -> Equipo (1:N)**: Normalización básica para estadísticas por proveedor.
+*   **Equipo -> Protocolos Usados (1:N)**: Relación "viva". Si se borra un equipo, se borra su estado actual (`ON DELETE CASCADE`).
+*   **Equipo -> Historial Puertos (1:N)**: Relación histórica. Mantiene el registro de actividad de red a lo largo del tiempo.
+*   **Integridad Referencial**:
+    - Se utilizan claves foráneas (`FK`) estrictas en casi todas las tablas para garantizar que no existan datos huérfanos.
+    - La tabla `conflictos` es una excepción intencional para permitir registrar evidencia sobre IPs o MACs que podrían no ser válidas o consistentes.
