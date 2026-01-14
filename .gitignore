@@ -158,3 +158,12 @@ install-log.txt
 # ------------------------------------------------------------------------------
 TestResults/
 coverage/
+
+# ------------------------------------------------------------------------------
+# Resultados de Escaneo (Agente)
+# ------------------------------------------------------------------------------
+agent/port_scan_cache.json
+agent/scan_results.json
+agent/ultimo_escaneo.txt
+agent/error.log
+agent/scanner.log
